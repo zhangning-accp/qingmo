@@ -69,8 +69,23 @@ function chineseLabelBoundary(markdown: string, restore = false): string {
   });
 }
 
+const frontmatterPattern = /^(?:\uFEFF)?---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*(?=\r?\n|$)/;
+function editorMarkdown(markdown: string): string {
+  const frontmatter = frontmatterPattern.exec(markdown)?.[0];
+  if (!frontmatter) return chineseLabelBoundary(markdown);
+  let fence = '```';
+  while (frontmatter.split(/\r?\n/).some(line => line.startsWith(fence))) fence += '`';
+  return chineseLabelBoundary(`${fence}yaml\n${frontmatter}\n${fence}${markdown.slice(frontmatter.length)}`);
+}
+function restoreFrontmatter(markdown: string, original: string): string {
+  if (!frontmatterPattern.test(original)) return markdown;
+  const code = /^(`{3,}|~{3,})yaml[^\r\n]*\r?\n([\s\S]*?)\r?\n\1(?=\r?\n|$)/i.exec(markdown);
+  if (!code || frontmatterPattern.exec(code[2])?.[0].length !== code[2].length) return markdown;
+  return code[2] + markdown.slice(code[0].length);
+}
+
 document.querySelector('#app')!.innerHTML = `
-  <header><div class="brand"><span class="brand-mark">墨</span><b>轻墨</b><span class="version">0.4.0</span></div>
+  <header><div class="brand"><span class="brand-mark">墨</span><b>轻墨</b><span class="version">0.4.1</span></div>
   <nav><button id="new" title="Ctrl+N">新建</button><button id="open" title="Ctrl+O">打开</button><button id="save" class="primary" title="Ctrl+S">保存</button><button id="save-as">另存为</button><button id="export-word">导出 Word</button></nav>
   <div class="filename" id="filename">未命名.md</div><button id="mode" title="Ctrl+/">〈/〉 源码</button><button id="focus" title="隐藏侧栏">专注</button></header>
   <div id="tabs" role="tablist" aria-label="打开的文档"></div>
@@ -79,7 +94,7 @@ document.querySelector('#app')!.innerHTML = `
   <main><div class="paper-top"><span>一页空白，无限可能</span><span>MARKDOWN / 轻墨</span></div>
   <div class="table-tools"><button id="insert-table">＋ 插入表格</button><span class="divider"></span><button data-table="row">＋ 行</button><button data-table="column">＋ 列</button><button data-table="deleteRow">删行</button><button data-table="deleteColumn">删列</button><button data-table="deleteTable">删除表格</button><span class="table-hint">点击单元格后可增删行列</span></div>
   <div id="notice" role="status" hidden><span id="notice-text"></span><button id="notice-close" aria-label="关闭提示">×</button></div><div id="editor"></div><div id="source-shell" hidden><div id="line-gutter" aria-hidden="true"></div><textarea id="source" aria-label="Markdown 源码" spellcheck="false" wrap="off"></textarea></div>
-  </main></div><footer><span id="status">正在准备纸面…</span><span id="count"></span><span id="startup"></span><span>UTF-8 · Markdown</span></footer>
+  </main></div><footer><span id="status">正在准备纸面…</span><span id="count"></span><span id="lines"></span><span id="startup"></span><span>UTF-8 · Markdown</span></footer>
   <dialog id="unsaved"><h2>保存这次修改？</h2><p>文档有尚未保存的内容。</p><div><button value="cancel">继续编辑</button><button value="discard">放弃修改</button><button value="save" class="primary">保存</button></div></dialog>`;
 
 const $ = <T extends HTMLElement = HTMLElement>(selector: string) => document.querySelector<T>(selector)!;
@@ -121,7 +136,8 @@ if (!tabs.length) tabs.push(makeTab(welcome, null, undefined, '使用入门.md')
 let activeId = tabs[0].id;
 const activeTab = () => tabs.find(tab => tab.id === activeId)!;
 content = activeTab().content; saved = activeTab().saved; sourceMode = activeTab().sourceMode;
-const crepe = new CrepeBuilder({ root: '#editor', defaultValue: sourceMode ? '' : chineseLabelBoundary(content) })
+let sourceLineCount = countLines(content);
+const crepe = new CrepeBuilder({ root: '#editor', defaultValue: sourceMode ? '' : editorMarkdown(content) })
   .addFeature(table).addFeature(toolbar, { boldLabel: '加粗', italicLabel: '斜体', codeLabel: '行内代码', linkLabel: '链接', strikethroughLabel: '删除线' }).addFeature(listItem).addFeature(cursor);
 crepe.editor.config(ctx => ctx.update(uploadConfig.key, config => ({ ...config, uploader: async () => {
   notice('此预览版尚未支持图片粘贴，请暂用源码编辑图片链接。'); return [];
@@ -131,7 +147,11 @@ let editorTabId: string | null = sourceMode ? null : activeId;
 function syncContent() {
   if (switching || sourceMode) return;
   const doc = crepe.editor.action(ctx => ctx.get(editorViewCtx).state.doc);
-  if (doc !== lastDoc) { lastDoc = doc; content = chineseLabelBoundary(crepe.getMarkdown(), true); }
+  if (doc !== lastDoc) {
+    lastDoc = doc;
+    content = restoreFrontmatter(chineseLabelBoundary(crepe.getMarkdown(), true), content);
+    sourceLineCount = countLines(content);
+  }
 }
 const dirty = () => content !== saved;
 function notice(message: string) { $('#notice-text').textContent = message; $('#notice').hidden = !message; }
@@ -156,6 +176,7 @@ function refresh() {
   $('#filename').textContent = `${dirty() ? '● ' : ''}${name}`;
   $('#filename').title = path || name;
   $('#count').textContent = `${content.replace(/\s/g, '').length.toLocaleString()} 字符`;
+  $('#lines').textContent = `${sourceLineCount.toLocaleString()} 行`;
   $('#status').textContent = dirty() ? (draftError ? '有未保存的修改' : '有修改 · 本地草稿保护') : '已保存';
   if (!path && !dirty()) $('#status').textContent = content === welcome ? '示例文档 · 随时开始' : '空白文档';
   if (native) void getCurrentWindow().setTitle(`${dirty() ? '● ' : ''}${name} — 轻墨`);
@@ -188,7 +209,6 @@ if (restored) notice('已恢复上次未保存的草稿，每份草稿各占一�
 const elapsed = native ? await invoke<number>('editor_ready') : Math.round(performance.now());
 $('#startup').textContent = `编辑就绪 ${(elapsed / 1000).toFixed(2)} s`;
 
-let sourceLineCount = countLines(content);
 function updateLineNumbers() {
   const source = $<HTMLTextAreaElement>('#source');
   if (!sourceMode) return;
@@ -207,7 +227,7 @@ updateLineNumbers();
 async function setContent(value: string) {
   switching = true;
   try {
-    crepe.editor.action(replaceAll(chineseLabelBoundary(value), true));
+    crepe.editor.action(replaceAll(editorMarkdown(value), true));
     lastDoc = crepe.editor.action(ctx => ctx.get(editorViewCtx).state.doc);
     editorTabId = activeId;
     content = value; $<HTMLTextAreaElement>('#source').value = value; sourceLineCount = countLines(value);
@@ -289,7 +309,7 @@ async function activate(id: string) {
     switching = true;
     try {
       if (next.state) crepe.editor.action(ctx => ctx.get(editorViewCtx).updateState(next.state!));
-      else crepe.editor.action(replaceAll(chineseLabelBoundary(content), true));
+      else crepe.editor.action(replaceAll(editorMarkdown(content), true));
       lastDoc = crepe.editor.action(ctx => ctx.get(editorViewCtx).state.doc);
       editorTabId = id;
     } finally { switching = false; }
@@ -418,9 +438,9 @@ $('#editor').addEventListener('paste', event => {
   if (content.trim() || !(blockMarkup || inlineMarkup)) return;
   event.preventDefault(); event.stopImmediatePropagation();
   switching = true;
-  try { crepe.editor.action(replaceAll(chineseLabelBoundary(raw))); lastDoc = crepe.editor.action(ctx => ctx.get(editorViewCtx).state.doc); }
+  try { crepe.editor.action(replaceAll(editorMarkdown(raw))); lastDoc = crepe.editor.action(ctx => ctx.get(editorViewCtx).state.doc); }
   finally { switching = false; }
-  content = raw; refresh(); updateOutline(); tableState(); persistDraft();
+  content = raw; sourceLineCount = countLines(raw); refresh(); updateOutline(); tableState(); persistDraft();
 }, true);
 document.addEventListener('keydown', event => {
   if (event.isComposing || !(event.ctrlKey || event.metaKey)) return;

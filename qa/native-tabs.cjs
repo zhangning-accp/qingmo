@@ -90,10 +90,18 @@ const assert = require('node:assert/strict');
     await expect(page.locator('#source')).toHaveValue(bigSource);
     await page.getByRole('tab', { name: '大文档1.md', exact: true }).click();
     await expect(page.locator('#source')).toHaveValue(bigSource);
+    const metadataSource = '---\nschema_version: 1\nasset_id: native-check\ncontributors:\n  content_authors: [张安仁, Codex]\n---\n\n# 正文\n';
+    const metadataPath = path.join(folder, '带元数据.md'); fs.writeFileSync(metadataPath, metadataSource);
+    await drop([metadataPath]);
+    await expect(page.locator('.ProseMirror pre').first()).toContainText('schema_version: 1');
+    assert((await page.locator('.ProseMirror pre').first().textContent()).includes('schema_version: 1\nasset_id: native-check'));
+    await expect(page.locator('#lines')).toHaveText(`${metadataSource.split('\n').length} 行`);
+    await page.locator('#mode').click();
+    await expect(page.locator('#source')).toHaveValue(metadataSource);
     assert.deepEqual(errors, []);
     await page.screenshot({ path: path.join(__dirname, 'native-tabs.png') });
     fs.writeFileSync(path.join(__dirname, 'native-tabs-results.json'), JSON.stringify({
-      passed: true, nativeLargeOpenMs, checks: ['native drop event -> Rust file read -> tabs', 'independent native file saves', 'duplicate drop preserves unsaved content', 'external conflict protection', 'close tab confirmation', 'cancel window close preserves all tabs', 'unsaved tab exports editable Word with a table and equation', 'Chinese labels render bold without rewriting source', 'large documents open in source mode and switch between tabs'],
+      passed: true, nativeLargeOpenMs, checks: ['native drop event -> Rust file read -> tabs', 'independent native file saves', 'duplicate drop preserves unsaved content', 'external conflict protection', 'close tab confirmation', 'cancel window close preserves all tabs', 'unsaved tab exports editable Word with a table and equation', 'Chinese labels render bold without rewriting source', 'large documents open in source mode and switch between tabs', 'YAML metadata keeps line breaks and source text'],
       limitation: 'Drop events injected through Tauri; physical Explorer mouse drag and native picker multi-selection not automated',
     }, null, 2));
     console.log(`Native WebView2 integration: all checks passed; 6 large documents opened in ${nativeLargeOpenMs} ms`);

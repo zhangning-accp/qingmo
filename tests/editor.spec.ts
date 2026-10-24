@@ -64,6 +64,36 @@ test('draft survives reload and unchanged source roundtrip does not rewrite form
   await page.locator('#mode').click(); await expect(page.locator('#source')).toHaveValue(expected);
 });
 
+test('YAML frontmatter keeps its lines in layout and source; footer counts source lines', async ({ page }) => {
+  const raw = '---\nschema_version: 1\nasset_id: example\ncontributors:\n  content_authors: [张安仁, Codex]\n---\n\n# 正文\n\n原段落\n';
+  const chooser = page.waitForEvent('filechooser');
+  await page.locator('#open').click();
+  await (await chooser).setFiles({ name: '带元数据.md', mimeType: 'text/markdown', buffer: Buffer.from(raw) });
+  const frontmatter = page.locator('.ProseMirror pre').first();
+  await expect(frontmatter).toContainText('schema_version: 1');
+  expect(await frontmatter.textContent()).toContain('schema_version: 1\nasset_id: example');
+  await expect(page.locator('#lines')).toHaveText(`${raw.split('\n').length} 行`);
+  await page.screenshot({ path: 'qa/frontmatter-layout.png' });
+  await page.locator('#mode').click();
+  await expect(page.locator('#source')).toHaveValue(raw);
+  await page.locator('#mode').click();
+  await page.locator('.ProseMirror p').last().click();
+  await page.keyboard.press('End');
+  await page.keyboard.insertText('补充');
+  await page.locator('#mode').click();
+  const edited = await page.locator('#source').inputValue();
+  expect(edited).toMatch(/^---\nschema_version: 1\nasset_id: example\ncontributors:\n  content_authors: \[张安仁, Codex\]\n---/);
+  expect(edited).not.toContain('```yaml');
+  expect(edited).toContain('补充');
+  await expect(page.locator('#lines')).toHaveText(`${edited.split('\n').length} 行`);
+  await page.locator('#source').fill(`${edited}\n新行`);
+  await expect(page.locator('#lines')).toHaveText(`${edited.split('\n').length + 1} 行`);
+  await page.locator('#new').click();
+  await expect(page.locator('#lines')).toHaveText('1 行');
+  await page.getByRole('tab', { name: /带元数据.md/ }).click();
+  await expect(page.locator('#lines')).toHaveText(`${edited.split('\n').length + 1} 行`);
+});
+
 test('initial rendering has no runtime errors and fits the window', async ({ page }) => {
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
   await page.reload(); await expect(page.locator('#startup')).toContainText('编辑就绪');
