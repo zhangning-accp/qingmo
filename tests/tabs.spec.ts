@@ -65,7 +65,7 @@ test('recover multiple unsaved tabs and close only the selected tab', async ({ p
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('qingmo.drafts.v2') || '[]').length)).toBe(2);
   page.on('dialog', dialog => dialog.accept()); await page.reload();
   await expect(page.getByRole('tab')).toHaveCount(2);
-  await page.locator('.tab.active .tab-close').click(); await page.locator('button[value=cancel]').click();
+  await page.locator('.tab.active .tab-close').click(); await page.locator('#unsaved button[value=cancel]').click();
   await expect(page.getByRole('tab')).toHaveCount(2);
   await page.locator('.tab.active .tab-close').click(); await page.locator('button[value=discard]').click();
   await expect(page.getByRole('tab')).toHaveCount(1);

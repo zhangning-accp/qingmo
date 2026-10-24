@@ -1,6 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod documents;
-use documents::{Documents, OpenBatch};
+use documents::{Documents, ExternalChange, OpenBatch, Opened};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -76,6 +76,22 @@ fn close_document(id: String, state: tauri::State<'_, AppState>) -> Result<(), S
         .map_err(|e| e.to_string())?
         .close(&id);
     Ok(())
+}
+#[tauri::command]
+async fn check_documents(state: tauri::State<'_, AppState>) -> Result<Vec<ExternalChange>, String> {
+    Ok(state
+        .documents
+        .lock()
+        .map_err(|e| e.to_string())?
+        .external_changes())
+}
+#[tauri::command]
+async fn reload_document(id: String, state: tauri::State<'_, AppState>) -> Result<Opened, String> {
+    state
+        .documents
+        .lock()
+        .map_err(|e| e.to_string())?
+        .reload(&id)
 }
 #[tauri::command]
 async fn export_word(
@@ -154,6 +170,8 @@ fn main() {
             open_documents,
             save_document,
             close_document,
+            check_documents,
+            reload_document,
             export_word,
             editor_ready
         ])

@@ -4,6 +4,7 @@ use std::{
     fs,
     io::Write,
     path::{Path, PathBuf},
+    time::SystemTime,
 };
 
 #[derive(Default)]
@@ -14,12 +15,34 @@ pub struct Documents {
 struct Document {
     path: PathBuf,
     original: String,
+    stamp: Option<FileStamp>,
+}
+#[derive(Clone, PartialEq, Eq)]
+struct FileStamp {
+    len: u64,
+    modified: Option<SystemTime>,
+    created: Option<SystemTime>,
+}
+impl FileStamp {
+    fn read(path: &Path) -> Result<Self, String> {
+        let metadata = fs::metadata(path).map_err(|e| e.to_string())?;
+        Ok(Self {
+            len: metadata.len(),
+            modified: metadata.modified().ok(),
+            created: metadata.created().ok(),
+        })
+    }
 }
 #[derive(Clone, Serialize)]
 pub struct Opened {
     pub id: String,
     pub path: String,
     pub content: String,
+}
+#[derive(Serialize)]
+pub struct ExternalChange {
+    pub id: String,
+    pub error: Option<String>,
 }
 #[derive(Default, Serialize)]
 pub struct OpenBatch {
@@ -32,6 +55,15 @@ fn read_utf8(path: &Path) -> Result<String, String> {
         return Err("暂支持 10 MB 以内的文档".into());
     }
     fs::read_to_string(path).map_err(|e| format!("无法读取 UTF-8 文档：{e}"))
+}
+fn read_snapshot(path: &Path) -> Result<(String, FileStamp), String> {
+    let before = FileStamp::read(path)?;
+    let content = read_utf8(path)?;
+    let after = FileStamp::read(path)?;
+    if before != after {
+        return Err("文件正在更新，请稍后重试".into());
+    }
+    Ok((content, after))
 }
 fn canonical(path: &Path) -> Result<PathBuf, String> {
     if path.exists() {
@@ -76,7 +108,7 @@ impl Documents {
                 content: doc.original.clone(),
             });
         }
-        let content = read_utf8(&path)?;
+        let (content, stamp) = read_snapshot(&path)?;
         self.next += 1;
         let id = format!("file-{}", self.next);
         self.entries.insert(
@@ -84,6 +116,7 @@ impl Documents {
             Document {
                 path: path.clone(),
                 original: content.clone(),
+                stamp: Some(stamp),
             },
         );
         Ok(Opened {
@@ -108,6 +141,41 @@ impl Documents {
             }
         }
         batch
+    }
+    pub fn external_changes(&mut self) -> Vec<ExternalChange> {
+        let mut changes = Vec::new();
+        for (id, doc) in &mut self.entries {
+            match FileStamp::read(&doc.path) {
+                Ok(stamp) if doc.stamp.as_ref() == Some(&stamp) => continue,
+                Ok(_) => match read_snapshot(&doc.path) {
+                    Ok((content, stamp)) if content == doc.original => doc.stamp = Some(stamp),
+                    Ok(_) => changes.push(ExternalChange {
+                        id: id.clone(),
+                        error: None,
+                    }),
+                    Err(error) => changes.push(ExternalChange {
+                        id: id.clone(),
+                        error: Some(error),
+                    }),
+                },
+                Err(error) => changes.push(ExternalChange {
+                    id: id.clone(),
+                    error: Some(error),
+                }),
+            }
+        }
+        changes
+    }
+    pub fn reload(&mut self, id: &str) -> Result<Opened, String> {
+        let doc = self.entries.get_mut(id).ok_or("文件未在轻墨中打开")?;
+        let (content, stamp) = read_snapshot(&doc.path)?;
+        doc.original = content.clone();
+        doc.stamp = Some(stamp);
+        Ok(Opened {
+            id: id.into(),
+            path: doc.path.to_string_lossy().into(),
+            content,
+        })
     }
     pub fn save(&mut self, id: &str, path: &Path, content: &str) -> Result<String, String> {
         let path = canonical(path)?;
@@ -137,6 +205,7 @@ impl Documents {
             Document {
                 path: path.clone(),
                 original: content.into(),
+                stamp: FileStamp::read(&path).ok(),
             },
         );
         Ok(path.to_string_lossy().into())
@@ -165,11 +234,32 @@ mod tests {
         fs::write(&a, "外部修改").unwrap();
         assert!(store.save(aid, &a, "覆盖").is_err());
         assert_eq!(fs::read_to_string(&a).unwrap(), "外部修改");
+        let changed = store.external_changes();
+        assert_eq!(changed.len(), 1);
+        assert_eq!(changed[0].id, *aid);
+        assert!(changed[0].error.is_none());
+        assert_eq!(store.reload(aid).unwrap().content, "外部修改");
+        assert!(store.external_changes().is_empty());
+        store.save(aid, &a, "基于外部版本继续编辑").unwrap();
         let c = dir.path().join("另存.md");
         store.save(aid, &c, "另存内容").unwrap();
         assert_eq!(store.open_many(vec![c]).documents[0].id, *aid);
         store.close(bid);
         assert!(store.path(bid).is_none());
+    }
+    #[test]
+    fn missing_file_is_reported_without_losing_open_content() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("文档.md");
+        fs::write(&path, "原文").unwrap();
+        let mut store = Documents::default();
+        let opened = store.open_many(vec![path.clone()]).documents.remove(0);
+        fs::remove_file(&path).unwrap();
+        let changed = store.external_changes();
+        assert_eq!(changed.len(), 1);
+        assert!(changed[0].error.is_some());
+        assert!(store.reload(&opened.id).is_err());
+        assert_eq!(opened.content, "原文");
     }
     #[test]
     fn batch_keeps_good_files_and_reports_invalid_inputs() {

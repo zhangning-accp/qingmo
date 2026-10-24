@@ -41,7 +41,7 @@ test('unsaved changes can cancel or discard; undo cannot restore previous docume
   await page.locator('#new').click();
   await page.locator('.ProseMirror').click(); await page.keyboard.insertText('旧文档');
   await page.locator('.tab.active .tab-close').click(); await expect(page.locator('#unsaved')).toBeVisible();
-  await page.locator('button[value=cancel]').click(); await expect(page.locator('.ProseMirror')).toContainText('旧文档');
+  await page.locator('#unsaved button[value=cancel]').click(); await expect(page.locator('.ProseMirror')).toContainText('旧文档');
   await page.locator('.tab.active .tab-close').click(); await page.locator('button[value=discard]').click();
   await page.locator('.ProseMirror').click(); await page.keyboard.press('Control+z');
   await expect(page.locator('.ProseMirror')).not.toContainText('旧文档');

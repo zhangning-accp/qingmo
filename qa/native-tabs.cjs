@@ -58,7 +58,7 @@ const assert = require('node:assert/strict');
     await expect(page.locator('#unsaved')).toBeVisible();
     await page.locator('button[value=discard]').click();
     await expect(page.locator('#unsaved p')).not.toContainText('甲.md');
-    await page.locator('button[value=cancel]').click();
+    await page.locator('#unsaved button[value=cancel]').click();
     await page.getByRole('tab', { name: '● 甲.md', exact: true }).click();
     await expect(page.locator('#source')).toHaveValue('甲关闭时保留');
     const wordPath = path.join(folder, '未保存内容.docx');
@@ -98,10 +98,46 @@ const assert = require('node:assert/strict');
     await expect(page.locator('#lines')).toHaveText(`${metadataSource.split('\n').length} 行`);
     await page.locator('#mode').click();
     await expect(page.locator('#source')).toHaveValue(metadataSource);
+    const watchedPath = path.join(folder, '外部更新.md');
+    fs.writeFileSync(watchedPath, '# 最初版本');
+    await drop([watchedPath]);
+    await expect(page.locator('.ProseMirror h1')).toHaveText('最初版本');
+    fs.writeFileSync(watchedPath, '# 磁盘新版本');
+    await expect(page.locator('.ProseMirror h1')).toHaveText('磁盘新版本', { timeout: 10_000 });
+    await page.locator('#mode').click();
+    await page.locator('#source').fill('# 轻墨中的未保存修改');
+    fs.writeFileSync(watchedPath, '# 磁盘再次更新');
+    await expect(page.locator('.tab.active .tab-select')).toContainText('↻', { timeout: 10_000 });
+    await expect(page.locator('#source')).toHaveValue('# 轻墨中的未保存修改');
+    await page.locator('#save').click();
+    await expect(page.locator('#notice')).toContainText('其他程序修改');
+    await expect(page.locator('#reload-external')).toBeVisible();
+    await page.locator('#reload-external').click();
+    await expect(page.locator('#external-confirm')).toBeVisible();
+    await page.locator('#external-confirm button[value=cancel]').click();
+    await expect(page.locator('#source')).toHaveValue('# 轻墨中的未保存修改');
+    await page.locator('#reload-external').click();
+    await page.locator('#external-confirm button[value=reload]').click();
+    await expect(page.locator('#source')).toHaveValue('# 磁盘再次更新');
+    await expect(page.locator('.tab.active .tab-select')).not.toContainText('↻');
+    assert.equal(fs.readFileSync(watchedPath, 'utf8'), '# 磁盘再次更新');
+    const backgroundPath = path.join(folder, '后台更新.md');
+    fs.writeFileSync(backgroundPath, '# 后台旧内容');
+    await drop([backgroundPath]);
+    await expect(page.locator('.ProseMirror h1')).toHaveText('后台旧内容');
+    const backgroundId = await page.locator('.tab.active').getAttribute('data-id');
+    await page.getByRole('tab', { name: '外部更新.md', exact: true }).click();
+    fs.writeFileSync(backgroundPath, '# 后台磁盘新内容');
+    await expect.poll(async () => {
+      const changes = await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('check_documents'));
+      return changes.some(change => change.id === backgroundId);
+    }, { timeout: 10_000 }).toBe(false);
+    await page.getByRole('tab', { name: '后台更新.md', exact: true }).click();
+    await expect(page.locator('.ProseMirror h1')).toHaveText('后台磁盘新内容');
     assert.deepEqual(errors, []);
     await page.screenshot({ path: path.join(__dirname, 'native-tabs.png') });
     fs.writeFileSync(path.join(__dirname, 'native-tabs-results.json'), JSON.stringify({
-      passed: true, nativeLargeOpenMs, checks: ['native drop event -> Rust file read -> tabs', 'independent native file saves', 'duplicate drop preserves unsaved content', 'external conflict protection', 'close tab confirmation', 'cancel window close preserves all tabs', 'unsaved tab exports editable Word with a table and equation', 'Chinese labels render bold without rewriting source', 'large documents open in source mode and switch between tabs', 'YAML metadata keeps line breaks and source text'],
+      passed: true, nativeLargeOpenMs, checks: ['native drop event -> Rust file read -> tabs', 'independent native file saves', 'duplicate drop preserves unsaved content', 'external conflict protection', 'clean external changes automatically reload', 'inactive external changes refresh before tab activation', 'dirty external changes preserve local content and offer explicit reload', 'close tab confirmation', 'cancel window close preserves all tabs', 'unsaved tab exports editable Word with a table and equation', 'Chinese labels render bold without rewriting source', 'large documents open in source mode and switch between tabs', 'YAML metadata keeps line breaks and source text'],
       limitation: 'Drop events injected through Tauri; physical Explorer mouse drag and native picker multi-selection not automated',
     }, null, 2));
     console.log(`Native WebView2 integration: all checks passed; 6 large documents opened in ${nativeLargeOpenMs} ms`);

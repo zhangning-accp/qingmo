@@ -85,7 +85,7 @@ function restoreFrontmatter(markdown: string, original: string): string {
 }
 
 document.querySelector('#app')!.innerHTML = `
-  <header><div class="brand"><span class="brand-mark">墨</span><b>轻墨</b><span class="version">0.4.1</span></div>
+  <header><div class="brand"><span class="brand-mark">墨</span><b>轻墨</b><span class="version">0.4.2</span></div>
   <nav><button id="new" title="Ctrl+N">新建</button><button id="open" title="Ctrl+O">打开</button><button id="save" class="primary" title="Ctrl+S">保存</button><button id="save-as">另存为</button><button id="export-word">导出 Word</button></nav>
   <div class="filename" id="filename">未命名.md</div><button id="mode" title="Ctrl+/">〈/〉 源码</button><button id="focus" title="隐藏侧栏">专注</button></header>
   <div id="tabs" role="tablist" aria-label="打开的文档"></div>
@@ -93,9 +93,10 @@ document.querySelector('#app')!.innerHTML = `
   <div class="layout"><aside><div class="aside-label">文档大纲 <span>OUTLINE</span></div><div id="outline"></div><div class="aside-bottom"><span class="dot"></span> 本地写作<br><small>拖入文件即可打开</small></div></aside>
   <main><div class="paper-top"><span>一页空白，无限可能</span><span>MARKDOWN / 轻墨</span></div>
   <div class="table-tools"><button id="insert-table">＋ 插入表格</button><span class="divider"></span><button data-table="row">＋ 行</button><button data-table="column">＋ 列</button><button data-table="deleteRow">删行</button><button data-table="deleteColumn">删列</button><button data-table="deleteTable">删除表格</button><span class="table-hint">点击单元格后可增删行列</span></div>
-  <div id="notice" role="status" hidden><span id="notice-text"></span><button id="notice-close" aria-label="关闭提示">×</button></div><div id="editor"></div><div id="source-shell" hidden><div id="line-gutter" aria-hidden="true"></div><textarea id="source" aria-label="Markdown 源码" spellcheck="false" wrap="off"></textarea></div>
+  <div id="notice" role="status" hidden><span id="notice-text"></span><button id="reload-external" hidden>重新载入</button><button id="notice-close" aria-label="关闭提示">×</button></div><div id="editor"></div><div id="source-shell" hidden><div id="line-gutter" aria-hidden="true"></div><textarea id="source" aria-label="Markdown 源码" spellcheck="false" wrap="off"></textarea></div>
   </main></div><footer><span id="status">正在准备纸面…</span><span id="count"></span><span id="lines"></span><span id="startup"></span><span>UTF-8 · Markdown</span></footer>
-  <dialog id="unsaved"><h2>保存这次修改？</h2><p>文档有尚未保存的内容。</p><div><button value="cancel">继续编辑</button><button value="discard">放弃修改</button><button value="save" class="primary">保存</button></div></dialog>`;
+  <dialog id="unsaved"><h2>保存这次修改？</h2><p>文档有尚未保存的内容。</p><div><button value="cancel">继续编辑</button><button value="discard">放弃修改</button><button value="save" class="primary">保存</button></div></dialog>
+  <dialog id="external-confirm"><h2>重新载入外部文件？</h2><p>这会放弃当前标签尚未保存的修改，改用磁盘上的文件内容。</p><div><button value="cancel">保留当前修改</button><button value="reload" class="primary">放弃修改并重新载入</button></div></dialog>`;
 
 const $ = <T extends HTMLElement = HTMLElement>(selector: string) => document.querySelector<T>(selector)!;
 const native = isTauri();
@@ -103,7 +104,7 @@ let content = welcome, saved = welcome, path: string | null = null, sourceMode =
 let draftTimer: ReturnType<typeof setTimeout>;
 let draftError = false;
 let closing = false;
-type Tab = { id: string; title: string; path: string | null; content: string; saved: string; sourceMode: boolean; fastOpen: boolean; state?: EditorState; scroll: number; sourceSelection: [number, number] };
+type Tab = { id: string; title: string; path: string | null; content: string; saved: string; sourceMode: boolean; fastOpen: boolean; state?: EditorState; scroll: number; sourceSelection: [number, number]; externalChanged?: boolean; externalError?: string };
 let untitled = 0;
 function countLines(text: string): number {
   let lines = 1;
@@ -154,8 +155,12 @@ function syncContent() {
   }
 }
 const dirty = () => content !== saved;
-function notice(message: string) { $('#notice-text').textContent = message; $('#notice').hidden = !message; }
+function notice(message: string, canReload = false) { $('#notice-text').textContent = message; $('#reload-external').hidden = !canReload; $('#notice').hidden = !message; }
 $('#notice-close').onclick = () => notice('');
+function showExternalNotice(tab: Tab) {
+  if (tab.externalError) notice(`“${tab.title}”的磁盘文件暂时无法读取：${tab.externalError}。当前内容已保留。`);
+  else notice(`“${tab.title}”已被外部修改。轻墨中还有未保存的内容；请先另存为，或点击“重新载入”放弃本地修改。`, true);
+}
 function persistDraft() {
   if (closing) return;
   syncContent();
@@ -179,6 +184,7 @@ function refresh() {
   $('#lines').textContent = `${sourceLineCount.toLocaleString()} 行`;
   $('#status').textContent = dirty() ? (draftError ? '有未保存的修改' : '有修改 · 本地草稿保护') : '已保存';
   if (!path && !dirty()) $('#status').textContent = content === welcome ? '示例文档 · 随时开始' : '空白文档';
+  if (activeTab().externalChanged) $('#status').textContent = activeTab().externalError ? '外部文件不可读取 · 当前内容已保留' : '外部文件已修改 · 当前内容已保留';
   if (native) void getCurrentWindow().setTitle(`${dirty() ? '● ' : ''}${name} — 轻墨`);
 }
 function updateOutline() {
@@ -280,9 +286,9 @@ function renderTabs() {
     }
   }
   tabs.forEach((tab, i) => {
-    const item = bar.children[i] as HTMLElement; item.classList.toggle('active', tab.id === activeId);
+    const item = bar.children[i] as HTMLElement; item.classList.toggle('active', tab.id === activeId); item.classList.toggle('external', !!tab.externalChanged);
     const select = item.firstElementChild as HTMLButtonElement;
-    select.textContent = `${tab.content !== tab.saved ? '● ' : ''}${tab.title}`;
+    select.textContent = `${tab.content !== tab.saved ? '● ' : ''}${tab.externalChanged ? '↻ ' : ''}${tab.title}`;
     select.title = tab.path || tab.title; select.setAttribute('aria-selected', String(tab.id === activeId));
     item.lastElementChild!.setAttribute('aria-label', `关闭 ${tab.title}`);
   });
@@ -296,7 +302,7 @@ function revealActiveTab() {
   else if (right > bar.scrollLeft + bar.clientWidth) bar.scrollLeft = right - bar.clientWidth;
 }
 async function activate(id: string) {
-  if (id === activeId) return;
+  if (id === activeId) { if (activeTab().externalChanged) showExternalNotice(activeTab()); return; }
   syncContent(); checkpoint();
   const previous = activeTab();
   if (editorTabId === previous.id) previous.state = crepe.editor.action(ctx => ctx.get(editorViewCtx).state);
@@ -324,6 +330,7 @@ async function activate(id: string) {
   refresh(); if (!sourceMode) updateOutline();
   tableState(); updateLineNumbers();
   if (next.scroll || previous.scroll !== next.scroll) $('main').scrollTop = next.scroll;
+  if (next.externalChanged) showExternalNotice(next);
 }
 async function save(saveAs = false): Promise<boolean> {
   const snapshot = content;
@@ -334,7 +341,7 @@ async function save(saveAs = false): Promise<boolean> {
     const link = document.createElement('a'); link.href = URL.createObjectURL(new Blob([snapshot], { type: 'text/markdown;charset=utf-8' }));
     link.download = activeTab().title; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000);
   }
-  saved = snapshot; persistDraft(); notice(''); return true;
+  saved = snapshot; activeTab().externalChanged = false; activeTab().externalError = undefined; persistDraft(); notice(''); return true;
 }
 async function exportWord() {
   if (!native) { notice('请在 Windows 桌面版中导出 Word。'); return; }
@@ -410,9 +417,78 @@ async function run(action: () => Promise<unknown>) {
   // Native dialogs are asynchronous: freeze edits so discard/save decisions stay valid.
   const view = crepe.editor.action(ctx => ctx.get(editorViewCtx));
   view.setProps({ editable: () => false }); $<HTMLTextAreaElement>('#source').readOnly = true;
-  try { await action(); } catch (error) { notice(String(error)); }
+  try { await action(); } catch (error) { notice(String(error), !!activeTab().externalChanged && !activeTab().externalError); }
   finally { busy = false; view.setProps({ editable: () => true }); $<HTMLTextAreaElement>('#source').readOnly = false; refresh(); }
 }
+type ExternalChange = { id: string; error: string | null };
+function markExternal(tab: Tab, error?: string) {
+  const changed = !tab.externalChanged || tab.externalError !== error;
+  if (!changed) return;
+  tab.externalChanged = true; tab.externalError = error;
+  refresh();
+  if (tab.id === activeId) showExternalNotice(tab);
+}
+async function reloadExternal(id: string, discardLocal = false) {
+  syncContent(); checkpoint();
+  const tab = tabs.find(item => item.id === id);
+  if (!tab) return;
+  if (tab.content !== tab.saved && !discardLocal) { markExternal(tab); return; }
+  const opened = await invoke<Opened>('reload_document', { id });
+  const large = fastOpen(opened.content);
+  Object.assign(tab, { content: opened.content, saved: opened.content, path: opened.path, state: undefined, fastOpen: large, sourceMode: tab.sourceMode || large, externalChanged: false, externalError: undefined });
+  if (id === activeId) {
+    const scroll = $('main').scrollTop;
+    content = opened.content; saved = opened.content; path = opened.path; sourceMode = tab.sourceMode;
+    if (sourceMode) {
+      editorTabId = null;
+      $<HTMLTextAreaElement>('#source').value = content;
+      sourceLineCount = countLines(content);
+    } else await setContent(content);
+    $('#editor').hidden = sourceMode; $('#source-shell').hidden = !sourceMode;
+    $('#mode').textContent = sourceMode ? '◉ 排版' : '〈/〉 源码';
+    $<HTMLButtonElement>('#insert-table').disabled = sourceMode;
+    $('#outline').style.visibility = sourceMode ? 'hidden' : 'visible';
+    if (!sourceMode) updateOutline();
+    tableState(); updateLineNumbers(); refresh();
+    $('main').scrollTop = scroll;
+    notice(`“${tab.title}”已按磁盘上的最新内容更新。`);
+  } else refresh();
+  persistDraft();
+}
+let checkingExternal = false;
+async function checkExternal() {
+  if (!native || busy || checkingExternal || document.hidden) return;
+  checkingExternal = true;
+  try {
+    const changes = await invoke<ExternalChange[]>('check_documents');
+    if (busy) return;
+    syncContent(); checkpoint();
+    for (const change of changes) {
+      const tab = tabs.find(item => item.id === change.id);
+      if (!tab) continue;
+      if (change.error) { markExternal(tab, change.error); continue; }
+      if (tab.content !== tab.saved) { markExternal(tab); continue; }
+      if (busy) break;
+      await run(async () => {
+        syncContent(); checkpoint();
+        try { await reloadExternal(change.id); }
+        catch (error) { markExternal(tab, String(error)); }
+      });
+    }
+  } catch (error) { notice(`检查外部文件修改失败：${String(error)}`); }
+  finally { checkingExternal = false; }
+}
+$('#reload-external').onclick = () => void run(async () => {
+  if (!activeTab().externalChanged) return;
+  const dialog = $<HTMLDialogElement>('#external-confirm'); dialog.returnValue = 'cancel'; dialog.showModal();
+  const choice = await new Promise<string>(resolve => {
+    dialog.onclose = () => resolve(dialog.returnValue);
+    dialog.querySelectorAll<HTMLButtonElement>('button').forEach(button => { button.onclick = () => dialog.close(button.value); });
+  });
+  if (choice === 'reload') await reloadExternal(activeId, true);
+});
+if (native) setInterval(() => void checkExternal(), 2500);
+window.addEventListener('focus', () => void checkExternal());
 $('#new').onclick = () => void run(newDocument); $('#open').onclick = () => void run(open);
 $('#save').onclick = () => void run(() => save()); $('#save-as').onclick = () => void run(() => save(true));
 $('#export-word').onclick = () => void run(exportWord);
@@ -453,7 +529,7 @@ document.addEventListener('keydown', event => {
   if (actions[key]) { event.preventDefault(); void run(actions[key]); }
 });
 window.addEventListener('beforeunload', event => { if (closing) return; persistDraft(); if (!native && tabs.some(tab => tab.content !== tab.saved)) { event.preventDefault(); event.returnValue = ''; } });
-document.addEventListener('visibilitychange', () => { if (document.hidden) persistDraft(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) persistDraft(); else void checkExternal(); });
 if (native) await getCurrentWindow().onCloseRequested(event => {
   event.preventDefault(); void run(async () => {
     checkpoint();
