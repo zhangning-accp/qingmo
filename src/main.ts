@@ -70,7 +70,7 @@ function chineseLabelBoundary(markdown: string, restore = false): string {
 }
 
 document.querySelector('#app')!.innerHTML = `
-  <header><div class="brand"><span class="brand-mark">墨</span><b>轻墨</b><span class="version">预览版</span></div>
+  <header><div class="brand"><span class="brand-mark">墨</span><b>轻墨</b><span class="version">0.4.0</span></div>
   <nav><button id="new" title="Ctrl+N">新建</button><button id="open" title="Ctrl+O">打开</button><button id="save" class="primary" title="Ctrl+S">保存</button><button id="save-as">另存为</button><button id="export-word">导出 Word</button></nav>
   <div class="filename" id="filename">未命名.md</div><button id="mode" title="Ctrl+/">〈/〉 源码</button><button id="focus" title="隐藏侧栏">专注</button></header>
   <div id="tabs" role="tablist" aria-label="打开的文档"></div>
@@ -88,10 +88,22 @@ let content = welcome, saved = welcome, path: string | null = null, sourceMode =
 let draftTimer: ReturnType<typeof setTimeout>;
 let draftError = false;
 let closing = false;
-type Tab = { id: string; title: string; path: string | null; content: string; saved: string; sourceMode: boolean; state?: EditorState; scroll: number; sourceSelection: [number, number] };
+type Tab = { id: string; title: string; path: string | null; content: string; saved: string; sourceMode: boolean; fastOpen: boolean; state?: EditorState; scroll: number; sourceSelection: [number, number] };
 let untitled = 0;
+function countLines(text: string): number {
+  let lines = 1;
+  for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) === 10) lines++;
+  return lines;
+}
+function fastOpen(text: string): boolean {
+  if (text.length >= 80_000) return true;
+  let breaks = 0;
+  for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) === 10 && ++breaks >= 1_500) return true;
+  return false;
+}
 function makeTab(text = '', filePath: string | null = null, id: string = crypto.randomUUID(), title?: string): Tab {
-  return { id, title: title || filePath?.split(/[\\/]/).pop() || `未命名 ${++untitled}.md`, path: filePath, content: text, saved: text, sourceMode: false, scroll: 0, sourceSelection: [0, 0] };
+  const large = fastOpen(text);
+  return { id, title: title || filePath?.split(/[\\/]/).pop() || `未命名 ${++untitled}.md`, path: filePath, content: text, saved: text, sourceMode: large, fastOpen: large, scroll: 0, sourceSelection: [0, 0] };
 }
 const tabs: Tab[] = [];
 try {
@@ -108,13 +120,14 @@ const restored = tabs.length > 0;
 if (!tabs.length) tabs.push(makeTab(welcome, null, undefined, '使用入门.md'));
 let activeId = tabs[0].id;
 const activeTab = () => tabs.find(tab => tab.id === activeId)!;
-content = activeTab().content; saved = activeTab().saved;
-const crepe = new CrepeBuilder({ root: '#editor', defaultValue: chineseLabelBoundary(content) })
+content = activeTab().content; saved = activeTab().saved; sourceMode = activeTab().sourceMode;
+const crepe = new CrepeBuilder({ root: '#editor', defaultValue: sourceMode ? '' : chineseLabelBoundary(content) })
   .addFeature(table).addFeature(toolbar, { boldLabel: '加粗', italicLabel: '斜体', codeLabel: '行内代码', linkLabel: '链接', strikethroughLabel: '删除线' }).addFeature(listItem).addFeature(cursor);
 crepe.editor.config(ctx => ctx.update(uploadConfig.key, config => ({ ...config, uploader: async () => {
   notice('此预览版尚未支持图片粘贴，请暂用源码编辑图片链接。'); return [];
 }})));
 let lastDoc: object | undefined;
+let editorTabId: string | null = sourceMode ? null : activeId;
 function syncContent() {
   if (switching || sourceMode) return;
   const doc = crepe.editor.action(ctx => ctx.get(editorViewCtx).state.doc);
@@ -168,45 +181,67 @@ crepe.on(listener => listener.markdownUpdated(() => {
 }));
 await crepe.create();
 lastDoc = crepe.editor.action(ctx => ctx.get(editorViewCtx).state.doc);
-refresh(); updateOutline(); tableState();
+$('#editor').hidden = sourceMode; $('#source-shell').hidden = !sourceMode;
+if (sourceMode) { $<HTMLTextAreaElement>('#source').value = content; $('#mode').textContent = '◉ 排版'; $<HTMLButtonElement>('#insert-table').disabled = true; $('#outline').style.visibility = 'hidden'; }
+refresh(); if (!sourceMode) updateOutline(); tableState();
 if (restored) notice('已恢复上次未保存的草稿，每份草稿各占一个标签。请另存为文件。');
 const elapsed = native ? await invoke<number>('editor_ready') : Math.round(performance.now());
 $('#startup').textContent = `编辑就绪 ${(elapsed / 1000).toFixed(2)} s`;
 
+let sourceLineCount = countLines(content);
 function updateLineNumbers() {
   const source = $<HTMLTextAreaElement>('#source');
   if (!sourceMode) return;
   const lineHeight = 26.6;
-  const first = Math.max(0, Math.floor((source.scrollTop - 32) / lineHeight));
-  const total = source.value.split('\n').length;
-  const visible = Math.min(total - first, Math.ceil((source.clientHeight + 32) / lineHeight) + 2);
+  const first = Math.min(sourceLineCount - 1, Math.max(0, Math.floor((source.scrollTop - 32) / lineHeight)));
+  const visible = Math.min(sourceLineCount - first, Math.ceil((source.clientHeight + 32) / lineHeight) + 2);
   const gutter = $('#line-gutter');
   gutter.textContent = Array.from({ length: Math.max(visible, 0) }, (_, i) => String(first + i + 1)).join('\n');
   gutter.style.transform = `translateY(${32 + first * lineHeight - source.scrollTop}px)`;
 }
-function changedSource() { content = $<HTMLTextAreaElement>('#source').value; updateLineNumbers(); refresh(); clearTimeout(draftTimer); draftTimer = setTimeout(persistDraft, 500); }
+function changedSource() { content = $<HTMLTextAreaElement>('#source').value; sourceLineCount = countLines(content); activeTab().state = undefined; if (editorTabId === activeId) editorTabId = null; updateLineNumbers(); refresh(); clearTimeout(draftTimer); draftTimer = setTimeout(persistDraft, 500); }
 $('#source').addEventListener('input', changedSource);
 $('#source').addEventListener('scroll', updateLineNumbers);
 new ResizeObserver(updateLineNumbers).observe($<HTMLTextAreaElement>('#source'));
+updateLineNumbers();
 async function setContent(value: string) {
   switching = true;
   try {
     crepe.editor.action(replaceAll(chineseLabelBoundary(value), true));
     lastDoc = crepe.editor.action(ctx => ctx.get(editorViewCtx).state.doc);
-    content = value; $<HTMLTextAreaElement>('#source').value = value;
+    editorTabId = activeId;
+    content = value; $<HTMLTextAreaElement>('#source').value = value; sourceLineCount = countLines(value);
   }
   finally { switching = false; }
-  refresh(); updateOutline(); tableState(); updateLineNumbers();
+  refresh();
 }
 async function toggleMode() {
-  if (sourceMode) await setContent(content);
+  if (sourceMode && editorTabId !== activeId) {
+    if (activeTab().state) {
+      switching = true;
+      try {
+        crepe.editor.action(ctx => ctx.get(editorViewCtx).updateState(activeTab().state!));
+        lastDoc = crepe.editor.action(ctx => ctx.get(editorViewCtx).state.doc);
+        editorTabId = activeId;
+      } finally { switching = false; }
+    } else {
+      if (activeTab().fastOpen) {
+        notice('正在生成排版，内容较多，请稍候…');
+        await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      }
+      await setContent(content);
+      if (activeTab().fastOpen) notice('');
+    }
+  }
   sourceMode = !sourceMode;
   $('#editor').hidden = sourceMode; $('#source-shell').hidden = !sourceMode;
-  if (sourceMode) { $<HTMLTextAreaElement>('#source').value = content; $('#source').focus(); }
+  if (sourceMode) { $<HTMLTextAreaElement>('#source').value = content; sourceLineCount = countLines(content); $('#source').focus(); }
   updateLineNumbers();
   $('#mode').textContent = sourceMode ? '◉ 排版' : '〈/〉 源码';
   $<HTMLButtonElement>('#insert-table').disabled = sourceMode;
-  $('#outline').style.visibility = sourceMode ? 'hidden' : 'visible'; tableState();
+  $('#outline').style.visibility = sourceMode ? 'hidden' : 'visible';
+  if (!sourceMode) updateOutline();
+  tableState();
 }
 function checkpoint() {
   Object.assign(activeTab(), { content, saved, path, sourceMode });
@@ -232,29 +267,43 @@ function renderTabs() {
     item.lastElementChild!.setAttribute('aria-label', `关闭 ${tab.title}`);
   });
 }
+function revealActiveTab() {
+  const bar = $('#tabs');
+  const active = $<HTMLElement>('#tabs .active');
+  const left = active.offsetLeft - bar.offsetLeft;
+  const right = left + active.offsetWidth;
+  if (left < bar.scrollLeft) bar.scrollLeft = left;
+  else if (right > bar.scrollLeft + bar.clientWidth) bar.scrollLeft = right - bar.clientWidth;
+}
 async function activate(id: string) {
   if (id === activeId) return;
   syncContent(); checkpoint();
   const previous = activeTab();
-  previous.state = crepe.editor.action(ctx => ctx.get(editorViewCtx).state);
+  if (editorTabId === previous.id) previous.state = crepe.editor.action(ctx => ctx.get(editorViewCtx).state);
   previous.scroll = $('main').scrollTop;
   previous.sourceSelection = [$<HTMLTextAreaElement>('#source').selectionStart, $<HTMLTextAreaElement>('#source').selectionEnd];
   activeId = id; const next = activeTab();
   content = next.content; saved = next.saved; path = next.path; sourceMode = next.sourceMode;
-  switching = true;
-  try {
-    if (next.state) crepe.editor.action(ctx => ctx.get(editorViewCtx).updateState(next.state!));
-    else crepe.editor.action(replaceAll(chineseLabelBoundary(content), true));
-    lastDoc = crepe.editor.action(ctx => ctx.get(editorViewCtx).state.doc);
-  } finally { switching = false; }
+  renderTabs(); revealActiveTab();
+  if (!sourceMode) {
+    switching = true;
+    try {
+      if (next.state) crepe.editor.action(ctx => ctx.get(editorViewCtx).updateState(next.state!));
+      else crepe.editor.action(replaceAll(chineseLabelBoundary(content), true));
+      lastDoc = crepe.editor.action(ctx => ctx.get(editorViewCtx).state.doc);
+      editorTabId = id;
+    } finally { switching = false; }
+  }
   $<HTMLTextAreaElement>('#source').value = content;
+  sourceLineCount = countLines(content);
   $<HTMLTextAreaElement>('#source').setSelectionRange(...next.sourceSelection);
   $('#editor').hidden = sourceMode; $('#source-shell').hidden = !sourceMode;
   $('#mode').textContent = sourceMode ? '◉ 排版' : '〈/〉 源码';
   $<HTMLButtonElement>('#insert-table').disabled = sourceMode;
   $('#outline').style.visibility = sourceMode ? 'hidden' : 'visible';
-  refresh(); updateOutline(); tableState(); updateLineNumbers(); $('main').scrollTop = next.scroll;
-  $('#tabs .active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  refresh(); if (!sourceMode) updateOutline();
+  tableState(); updateLineNumbers();
+  if (next.scroll || previous.scroll !== next.scroll) $('main').scrollTop = next.scroll;
 }
 async function save(saveAs = false): Promise<boolean> {
   const snapshot = content;
@@ -287,16 +336,20 @@ async function allowDiscard(): Promise<boolean> {
   return choice === 'discard' || (choice === 'save' && await save());
 }
 type Opened = { id: string; path: string; content: string };
-async function acceptOpened(documents: Opened[]) {
+async function acceptOpened(documents: Opened[]): Promise<boolean> {
+  let lastId: string | null = null;
   for (const doc of documents) {
     if (!tabs.some(tab => tab.id === doc.id)) tabs.push(makeTab(doc.content, doc.path, doc.id));
-    await activate(doc.id);
+    lastId = doc.id;
   }
+  if (lastId) await activate(lastId);
   persistDraft();
+  return !!lastId && activeTab().fastOpen && sourceMode;
 }
 async function openPaths(paths?: string[]) {
   const result = await invoke<{ documents: Opened[]; errors: string[] }>('open_documents', { paths: paths ?? null });
-  await acceptOpened(result.documents); notice(result.errors.join('\n'));
+  const fast = await acceptOpened(result.documents);
+  notice([...result.errors, ...(fast ? ['大文档已先以源码打开。点击右上角「排版」生成预览，转换可能需要几秒。'] : [])].join('\n'));
 }
 async function openBrowserFiles(files: File[]) {
   const documents: Opened[] = [], errors: string[] = [];
@@ -308,7 +361,8 @@ async function openBrowserFiles(files: File[]) {
       documents.push({ id: `browser:${file.name}:${file.size}:${file.lastModified}`, path: file.name, content: text });
     } catch (error) { errors.push(`${file.name}：${String(error)}`); }
   }
-  await acceptOpened(documents); notice(errors.join('\n'));
+  const fast = await acceptOpened(documents);
+  notice([...errors, ...(fast ? ['大文档已先以源码打开。点击右上角「排版」生成预览，转换可能需要几秒。'] : [])].join('\n'));
 }
 async function open() {
   if (native) {
@@ -382,7 +436,8 @@ window.addEventListener('beforeunload', event => { if (closing) return; persistD
 document.addEventListener('visibilitychange', () => { if (document.hidden) persistDraft(); });
 if (native) await getCurrentWindow().onCloseRequested(event => {
   event.preventDefault(); void run(async () => {
-    for (const tab of tabs) {
+    checkpoint();
+    for (const tab of tabs.filter(tab => tab.content !== tab.saved)) {
       await activate(tab.id);
       if (!await allowDiscard()) return;
     }

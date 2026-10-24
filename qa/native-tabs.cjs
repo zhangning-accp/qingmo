@@ -78,12 +78,24 @@ const assert = require('node:assert/strict');
     await expect(page.locator('.ProseMirror')).not.toContainText('**');
     await page.locator('#mode').click();
     await expect(page.locator('#source')).toHaveValue(labelSource);
+    const bigSource = '## 大文档\n\n这一段用于检查多标签加载。\n\n'.repeat(5_000);
+    const bigPaths = Array.from({ length: 6 }, (_, i) => path.join(folder, `大文档${i + 1}.md`));
+    bigPaths.forEach(file => fs.writeFileSync(file, bigSource));
+    const priorTabs = await page.getByRole('tab').count();
+    const largeOpenStarted = Date.now();
+    await drop(bigPaths);
+    await expect(page.getByRole('tab')).toHaveCount(priorTabs + bigPaths.length);
+    const nativeLargeOpenMs = Date.now() - largeOpenStarted;
+    await expect(page.locator('#source')).toBeVisible();
+    await expect(page.locator('#source')).toHaveValue(bigSource);
+    await page.getByRole('tab', { name: '大文档1.md', exact: true }).click();
+    await expect(page.locator('#source')).toHaveValue(bigSource);
     assert.deepEqual(errors, []);
     await page.screenshot({ path: path.join(__dirname, 'native-tabs.png') });
     fs.writeFileSync(path.join(__dirname, 'native-tabs-results.json'), JSON.stringify({
-      passed: true, checks: ['native drop event -> Rust file read -> tabs', 'independent native file saves', 'duplicate drop preserves unsaved content', 'external conflict protection', 'close tab confirmation', 'cancel window close preserves all tabs', 'unsaved tab exports editable Word with a table and equation', 'Chinese labels render bold without rewriting source'],
+      passed: true, nativeLargeOpenMs, checks: ['native drop event -> Rust file read -> tabs', 'independent native file saves', 'duplicate drop preserves unsaved content', 'external conflict protection', 'close tab confirmation', 'cancel window close preserves all tabs', 'unsaved tab exports editable Word with a table and equation', 'Chinese labels render bold without rewriting source', 'large documents open in source mode and switch between tabs'],
       limitation: 'Drop events injected through Tauri; physical Explorer mouse drag and native picker multi-selection not automated',
     }, null, 2));
-    console.log('Native WebView2 integration: all checks passed');
+    console.log(`Native WebView2 integration: all checks passed; 6 large documents opened in ${nativeLargeOpenMs} ms`);
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
