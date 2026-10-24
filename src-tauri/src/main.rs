@@ -79,6 +79,7 @@ fn close_document(id: String, state: tauri::State<'_, AppState>) -> Result<(), S
 }
 #[tauri::command]
 async fn export_word(
+    window: tauri::Window,
     content: String,
     title: String,
     source_path: Option<String>,
@@ -96,6 +97,7 @@ async fn export_word(
             .unwrap_or("未命名文档");
         let suggested = format!("{stem}.docx");
         let Some(file) = rfd::AsyncFileDialog::new()
+            .set_parent(&window)
             .add_filter("Word 文档", &["docx"])
             .set_file_name(&suggested)
             .save_file()
@@ -108,6 +110,7 @@ async fn export_word(
     let overwrite = if output.exists() && destination.is_none() {
         matches!(
             rfd::AsyncMessageDialog::new()
+                .set_parent(&window)
                 .set_title("覆盖已有 Word 文档？")
                 .set_description(format!("文件已存在：{}\n确定替换它吗？", output.display()))
                 .set_level(rfd::MessageLevel::Warning)

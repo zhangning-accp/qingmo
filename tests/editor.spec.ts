@@ -123,3 +123,19 @@ test('inline Markdown paste renders bold text in a blank tab', async ({ page }) 
   await expect(page.locator('.ProseMirror strong')).toHaveText('重点');
   await expect(page.locator('.ProseMirror code')).toHaveText('代码');
 });
+
+test('Word export feedback stays visible after scrolling and can be dismissed', async ({ page }) => {
+  await page.locator('#new').click();
+  await page.locator('#mode').click();
+  await page.locator('#source').fill('# 标题\n\n' + Array.from({ length: 80 }, (_, i) => `段落 ${i + 1}\n\n`).join(''));
+  await page.locator('#mode').click();
+  await page.locator('main').evaluate(element => { element.scrollTop = element.scrollHeight; });
+  await page.locator('#export-word').click();
+  await expect(page.locator('#notice')).toContainText('Windows 桌面版');
+  expect(await page.locator('#notice').evaluate(element => {
+    const box = element.getBoundingClientRect();
+    return box.top >= 0 && box.bottom <= innerHeight;
+  })).toBe(true);
+  await page.locator('#notice-close').click();
+  await expect(page.locator('#notice')).toBeHidden();
+});

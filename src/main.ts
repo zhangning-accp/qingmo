@@ -52,7 +52,7 @@ document.querySelector('#app')!.innerHTML = `
   <div class="layout"><aside><div class="aside-label">文档大纲 <span>OUTLINE</span></div><div id="outline"></div><div class="aside-bottom"><span class="dot"></span> 本地写作<br><small>拖入文件即可打开</small></div></aside>
   <main><div class="paper-top"><span>一页空白，无限可能</span><span>MARKDOWN / 轻墨</span></div>
   <div class="table-tools"><button id="insert-table">＋ 插入表格</button><span class="divider"></span><button data-table="row">＋ 行</button><button data-table="column">＋ 列</button><button data-table="deleteRow">删行</button><button data-table="deleteColumn">删列</button><button data-table="deleteTable">删除表格</button><span class="table-hint">点击单元格后可增删行列</span></div>
-  <div id="notice" role="status" hidden></div><div id="editor"></div><div id="source-shell" hidden><div id="line-gutter" aria-hidden="true"></div><textarea id="source" aria-label="Markdown 源码" spellcheck="false" wrap="off"></textarea></div>
+  <div id="notice" role="status" hidden><span id="notice-text"></span><button id="notice-close" aria-label="关闭提示">×</button></div><div id="editor"></div><div id="source-shell" hidden><div id="line-gutter" aria-hidden="true"></div><textarea id="source" aria-label="Markdown 源码" spellcheck="false" wrap="off"></textarea></div>
   </main></div><footer><span id="status">正在准备纸面…</span><span id="count"></span><span id="startup"></span><span>UTF-8 · Markdown</span></footer>
   <dialog id="unsaved"><h2>保存这次修改？</h2><p>文档有尚未保存的内容。</p><div><button value="cancel">继续编辑</button><button value="discard">放弃修改</button><button value="save" class="primary">保存</button></div></dialog>`;
 
@@ -95,7 +95,8 @@ function syncContent() {
   if (doc !== lastDoc) { lastDoc = doc; content = crepe.getMarkdown(); }
 }
 const dirty = () => content !== saved;
-function notice(message: string) { $('#notice').textContent = message; $('#notice').hidden = !message; }
+function notice(message: string) { $('#notice-text').textContent = message; $('#notice').hidden = !message; }
+$('#notice-close').onclick = () => notice('');
 function persistDraft() {
   if (closing) return;
   syncContent();
@@ -243,10 +244,11 @@ async function save(saveAs = false): Promise<boolean> {
 async function exportWord() {
   if (!native) { notice('请在 Windows 桌面版中导出 Word。'); return; }
   if (!content.trim()) { notice('当前标签没有可导出的内容。'); return; }
+  notice('请选择 Word 文档的保存位置…');
   const result = await invoke<string | null>('export_word', {
     content, title: activeTab().title, sourcePath: path, destination: null,
   });
-  if (result) notice(result);
+  notice(result || '已取消 Word 导出。');
 }
 async function allowDiscard(): Promise<boolean> {
   if (!dirty()) return true;
@@ -303,7 +305,7 @@ async function closeTab(id: string) {
   await activate(next.id); tabs.splice(index, 1); persistDraft(); notice('');
 }
 async function run(action: () => Promise<unknown>) {
-  if (busy) return; busy = true;
+  if (busy) { notice('正在处理上一项操作，请稍后再试。'); return; } busy = true;
   syncContent();
   // Native dialogs are asynchronous: freeze edits so discard/save decisions stay valid.
   const view = crepe.editor.action(ctx => ctx.get(editorViewCtx));
