@@ -1,0 +1,23 @@
+{
+  "name": "qingmo",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc && vite build",
+    "desktop": "tauri dev",
+    "package": "tauri build --no-bundle"
+  },
+  "dependencies": {
+    "@milkdown/crepe": "7.22.3",
+    "@milkdown/kit": "7.22.3",
+    "@tauri-apps/api": "2.11.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56",
+    "@tauri-apps/cli": "^2",
+    "typescript": "^5.9",
+    "vite": "^7"
+  }
+}

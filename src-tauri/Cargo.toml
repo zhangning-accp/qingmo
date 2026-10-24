@@ -1,0 +1,19 @@
+[package]
+name = "qingmo"
+version = "0.2.0"
+edition = "2024"
+rust-version = "1.86"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+rfd = "0.15"
+tempfile = "=3.19.1"
+
+[profile.release]
+opt-level = "s"
+strip = true
+lto = "thin"

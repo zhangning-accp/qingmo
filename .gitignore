@@ -1,0 +1,11 @@
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/
+test-results/
+交付/
+qa/webview-*/
+qa/native-files-*/
+qa/*.png
+qa/*-results.json
+qa/startup-*.txt
