@@ -43,6 +43,32 @@ const welcome = `# 写下，思绪就清晰了。
 这是一份示例。点击左上角「新建」，开始你自己的文档。
 `;
 
+// CommonMark treats the closing ** after 】 as literal punctuation when text follows
+// immediately. An entity gives the editor and Word converter a zero-width boundary.
+function chineseLabelBoundary(markdown: string, restore = false): string {
+  let fence: { marker: string; length: number } | null = null;
+  return markdown.replace(/^[^\r\n]*/gm, line => {
+    const marker = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1];
+    if (marker) {
+      if (!fence) fence = { marker: marker[0], length: marker.length };
+      else if (marker[0] === fence.marker && marker.length >= fence.length) fence = null;
+      return line;
+    }
+    if (fence || /^ {4}/.test(line)) return line;
+    const prefix = /^([ \t]{0,3}(?:(?:[-*+]|\d+\.)[ \t]+)?)(\*\*【[^】*\r\n]+】\*\*)/u;
+    const match = prefix.exec(line);
+    if (!match) return line;
+    const end = match[0].length;
+    if (restore) {
+      const boundary = line.slice(end).match(/^(?:\u200B|&#8203;)/u)?.[0];
+      return boundary ? line.slice(0, end) + line.slice(end + boundary.length) : line;
+    }
+    return /^[\p{L}\p{N}]/u.test(line.slice(end))
+      ? line.slice(0, end) + '&#8203;' + line.slice(end)
+      : line;
+  });
+}
+
 document.querySelector('#app')!.innerHTML = `
   <header><div class="brand"><span class="brand-mark">墨</span><b>轻墨</b><span class="version">预览版</span></div>
   <nav><button id="new" title="Ctrl+N">新建</button><button id="open" title="Ctrl+O">打开</button><button id="save" class="primary" title="Ctrl+S">保存</button><button id="save-as">另存为</button><button id="export-word">导出 Word</button></nav>
@@ -83,7 +109,7 @@ if (!tabs.length) tabs.push(makeTab(welcome, null, undefined, '使用入门.md')
 let activeId = tabs[0].id;
 const activeTab = () => tabs.find(tab => tab.id === activeId)!;
 content = activeTab().content; saved = activeTab().saved;
-const crepe = new CrepeBuilder({ root: '#editor', defaultValue: content })
+const crepe = new CrepeBuilder({ root: '#editor', defaultValue: chineseLabelBoundary(content) })
   .addFeature(table).addFeature(toolbar, { boldLabel: '加粗', italicLabel: '斜体', codeLabel: '行内代码', linkLabel: '链接', strikethroughLabel: '删除线' }).addFeature(listItem).addFeature(cursor);
 crepe.editor.config(ctx => ctx.update(uploadConfig.key, config => ({ ...config, uploader: async () => {
   notice('此预览版尚未支持图片粘贴，请暂用源码编辑图片链接。'); return [];
@@ -92,7 +118,7 @@ let lastDoc: object | undefined;
 function syncContent() {
   if (switching || sourceMode) return;
   const doc = crepe.editor.action(ctx => ctx.get(editorViewCtx).state.doc);
-  if (doc !== lastDoc) { lastDoc = doc; content = crepe.getMarkdown(); }
+  if (doc !== lastDoc) { lastDoc = doc; content = chineseLabelBoundary(crepe.getMarkdown(), true); }
 }
 const dirty = () => content !== saved;
 function notice(message: string) { $('#notice-text').textContent = message; $('#notice').hidden = !message; }
@@ -165,7 +191,7 @@ new ResizeObserver(updateLineNumbers).observe($<HTMLTextAreaElement>('#source'))
 async function setContent(value: string) {
   switching = true;
   try {
-    crepe.editor.action(replaceAll(value, true));
+    crepe.editor.action(replaceAll(chineseLabelBoundary(value), true));
     lastDoc = crepe.editor.action(ctx => ctx.get(editorViewCtx).state.doc);
     content = value; $<HTMLTextAreaElement>('#source').value = value;
   }
@@ -218,7 +244,7 @@ async function activate(id: string) {
   switching = true;
   try {
     if (next.state) crepe.editor.action(ctx => ctx.get(editorViewCtx).updateState(next.state!));
-    else crepe.editor.action(replaceAll(content, true));
+    else crepe.editor.action(replaceAll(chineseLabelBoundary(content), true));
     lastDoc = crepe.editor.action(ctx => ctx.get(editorViewCtx).state.doc);
   } finally { switching = false; }
   $<HTMLTextAreaElement>('#source').value = content;
@@ -246,7 +272,7 @@ async function exportWord() {
   if (!content.trim()) { notice('当前标签没有可导出的内容。'); return; }
   notice('请选择 Word 文档的保存位置…');
   const result = await invoke<string | null>('export_word', {
-    content, title: activeTab().title, sourcePath: path, destination: null,
+    content: chineseLabelBoundary(content), title: activeTab().title, sourcePath: path, destination: null,
   });
   notice(result || '已取消 Word 导出。');
 }
@@ -338,7 +364,7 @@ $('#editor').addEventListener('paste', event => {
   if (content.trim() || !(blockMarkup || inlineMarkup)) return;
   event.preventDefault(); event.stopImmediatePropagation();
   switching = true;
-  try { crepe.editor.action(replaceAll(raw)); lastDoc = crepe.editor.action(ctx => ctx.get(editorViewCtx).state.doc); }
+  try { crepe.editor.action(replaceAll(chineseLabelBoundary(raw))); lastDoc = crepe.editor.action(ctx => ctx.get(editorViewCtx).state.doc); }
   finally { switching = false; }
   content = raw; refresh(); updateOutline(); tableState(); persistDraft();
 }, true);

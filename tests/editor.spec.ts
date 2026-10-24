@@ -124,6 +124,39 @@ test('inline Markdown paste renders bold text in a blank tab', async ({ page }) 
   await expect(page.locator('.ProseMirror code')).toHaveText('代码');
 });
 
+test('Chinese label followed by text renders bold and keeps original Markdown', async ({ page }) => {
+  await page.locator('#new').click();
+  await page.locator('#mode').click();
+  const raw = '**【双通道】**本话题';
+  await page.locator('#source').fill(raw);
+  await page.locator('#mode').click();
+  await expect(page.locator('.ProseMirror strong')).toHaveText('【双通道】');
+  await expect(page.locator('.ProseMirror')).not.toContainText('**');
+  await page.locator('#mode').click();
+  await expect(page.locator('#source')).toHaveValue(raw);
+  await page.locator('#mode').click();
+  await page.locator('.ProseMirror p').last().click();
+  await page.keyboard.press('End');
+  await page.keyboard.insertText('补充');
+  await page.locator('#mode').click();
+  await expect(page.locator('#source')).toHaveValue(/^\*\*【双通道】\*\*本话题补充\n?$/);
+  await page.locator('#mode').click();
+  await expect(page.locator('.ProseMirror strong')).toHaveText('【双通道】');
+});
+
+test('pasted Chinese labels render bold without changing fenced code', async ({ page }) => {
+  await page.locator('#new').click();
+  const raw = ['**【选型依据】**PEP 四下 Unit4', '**【交互双通道】**本话题所有训练步骤', '', '```', '**【代码示例】**保持原样', '```'].join('\n');
+  await page.locator('.ProseMirror').evaluate((node, text) => {
+    const data = new DataTransfer(); data.setData('text/plain', text);
+    node.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: data }));
+  }, raw);
+  await expect(page.locator('.ProseMirror strong')).toHaveCount(2);
+  await expect(page.locator('.ProseMirror code')).toContainText('**【代码示例】**保持原样');
+  await page.locator('#mode').click();
+  await expect(page.locator('#source')).toHaveValue(raw);
+});
+
 test('Word export feedback stays visible after scrolling and can be dismissed', async ({ page }) => {
   await page.locator('#new').click();
   await page.locator('#mode').click();

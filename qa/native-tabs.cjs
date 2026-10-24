@@ -71,10 +71,17 @@ const assert = require('node:assert/strict');
     assert.match(wordResult, /1 个公式 · 1 个表格/);
     assert.equal(fs.readFileSync(wordPath).subarray(0, 2).toString(), 'PK');
     await expect(page.locator('#source')).toHaveValue(wordSource);
+    const labelSource = '**【选型依据】**PEP 四下 Unit4\n**【极简视觉约束】**无动画、少配图\n**【推送一致性】**本话题四模块\n**【交互双通道】**本话题所有训练步骤';
+    await page.locator('#new').click(); await page.locator('#mode').click();
+    await page.locator('#source').fill(labelSource); await page.locator('#mode').click();
+    await expect(page.locator('.ProseMirror strong')).toHaveCount(4);
+    await expect(page.locator('.ProseMirror')).not.toContainText('**');
+    await page.locator('#mode').click();
+    await expect(page.locator('#source')).toHaveValue(labelSource);
     assert.deepEqual(errors, []);
     await page.screenshot({ path: path.join(__dirname, 'native-tabs.png') });
     fs.writeFileSync(path.join(__dirname, 'native-tabs-results.json'), JSON.stringify({
-      passed: true, checks: ['native drop event -> Rust file read -> tabs', 'independent native file saves', 'duplicate drop preserves unsaved content', 'external conflict protection', 'close tab confirmation', 'cancel window close preserves all tabs', 'unsaved tab exports editable Word with a table and equation'],
+      passed: true, checks: ['native drop event -> Rust file read -> tabs', 'independent native file saves', 'duplicate drop preserves unsaved content', 'external conflict protection', 'close tab confirmation', 'cancel window close preserves all tabs', 'unsaved tab exports editable Word with a table and equation', 'Chinese labels render bold without rewriting source'],
       limitation: 'Drop events injected through Tauri; physical Explorer mouse drag and native picker multi-selection not automated',
     }, null, 2));
     console.log('Native WebView2 integration: all checks passed');

@@ -185,4 +185,26 @@ mod tests {
         assert!(xml.contains("<w:tbl>"));
         assert!(xml.contains("<m:oMath>"));
     }
+    #[test]
+    fn exports_normalized_chinese_label_as_bold() {
+        let folder = tempfile::tempdir().unwrap();
+        let output = folder.path().join("标签.docx");
+        md_to_word::convert::convert_text_with_base(
+            "**【双通道】**&#8203;本话题",
+            folder.path(),
+            &output,
+            false,
+        )
+        .unwrap();
+        let mut archive = zip::ZipArchive::new(File::open(output).unwrap()).unwrap();
+        let mut xml = String::new();
+        archive
+            .by_name("word/document.xml")
+            .unwrap()
+            .read_to_string(&mut xml)
+            .unwrap();
+        assert!(xml.contains("<w:b/>"));
+        assert!(xml.contains("【双通道】"));
+        assert!(!xml.contains(">*</w:t>"));
+    }
 }
