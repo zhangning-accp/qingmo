@@ -1,0 +1,16 @@
+[package]
+name = "md-to-word"
+version = "3.0.0"
+edition = "2024"
+rust-version = "1.86"
+license = "MIT"
+description = "Reusable Markdown to editable Word conversion library (from zhangning-accp/md-to-word)"
+
+[dependencies]
+pulldown-cmark = { version = "=0.13.0", default-features = false }
+zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
+latex2mathml = "=0.2.3"
+roxmltree = { version = "=0.20.0", default-features = false, features = ["std"] }
+imagesize = { version = "=0.14.0", default-features = false, features = ["png", "jpeg"] }
+percent-encoding = "=2.3.1"
+tempfile = "=3.19.1"

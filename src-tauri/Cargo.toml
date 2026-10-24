@@ -1,6 +1,6 @@
 [package]
 name = "qingmo"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.86"
 
@@ -12,6 +12,10 @@ tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 rfd = "0.15"
 tempfile = "=3.19.1"
+md-to-word = { path = "../vendor/md-to-word" }
+
+[dev-dependencies]
+zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
 
 [profile.release]
 opt-level = "s"

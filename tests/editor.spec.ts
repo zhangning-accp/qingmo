@@ -90,3 +90,36 @@ test('insert table, edit Chinese cells, and move between cells with Tab', async 
   await expect(page.locator('#source')).toHaveValue(/第一格/);
   await expect(page.locator('#source')).toHaveValue(/第二格/);
 });
+
+test('source mode shows line numbers and tracks scrolling', async ({ page }) => {
+  await page.locator('#mode').click();
+  await page.locator('#source').fill(Array.from({ length: 100 }, (_, i) => `第${i + 1}行`).join('\n'));
+  await expect(page.locator('#line-gutter')).toContainText('1');
+  await page.locator('#source').evaluate(element => { element.scrollTop = 1000; element.dispatchEvent(new Event('scroll')); });
+  await expect.poll(() => page.locator('#line-gutter').textContent()).not.toMatch(/^1\n/);
+  await page.locator('#source').evaluate(element => { element.scrollTop = 0; element.dispatchEvent(new Event('scroll')); });
+  await expect.poll(() => page.locator('#line-gutter').textContent()).toMatch(/^1\n2\n3/);
+});
+
+test('pasting Markdown into a new empty tab renders it immediately', async ({ page }) => {
+  await page.locator('#new').click();
+  const markdown = '# 粘贴标题\n\n| 名称 | 内容 |\n| --- | --- |\n| A | B |';
+  await page.locator('.ProseMirror').evaluate((node, text) => {
+    const data = new DataTransfer(); data.setData('text/plain', text);
+    node.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: data }));
+  }, markdown);
+  await expect(page.locator('.ProseMirror h1')).toHaveText('粘贴标题');
+  await expect(page.locator('.ProseMirror table:visible')).toHaveCount(1);
+  await page.locator('#mode').click();
+  await expect(page.locator('#source')).toHaveValue(markdown);
+});
+
+test('inline Markdown paste renders bold text in a blank tab', async ({ page }) => {
+  await page.locator('#new').click();
+  await page.locator('.ProseMirror').evaluate(node => {
+    const data = new DataTransfer(); data.setData('text/plain', '正文有 **重点** 和 `代码`');
+    node.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: data }));
+  });
+  await expect(page.locator('.ProseMirror strong')).toHaveText('重点');
+  await expect(page.locator('.ProseMirror code')).toHaveText('代码');
+});

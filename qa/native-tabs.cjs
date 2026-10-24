@@ -30,14 +30,17 @@ const assert = require('node:assert/strict');
     await page.locator('#mode').click(); await page.locator('#source').fill('# 甲已修改');
     await page.locator('#save').click();
     await expect.poll(() => fs.readFileSync(a, 'utf8')).toBe('# 甲已修改');
+    await expect(page.locator('#source')).not.toHaveAttribute('readonly');
     assert.equal(fs.readFileSync(b, 'utf8'), '# 乙原文');
     await page.getByRole('tab', { name: '乙.md', exact: true }).click();
+    await expect(page.getByRole('tab', { name: '乙.md', exact: true })).toHaveAttribute('aria-selected', 'true');
     await page.locator('#mode').click(); await page.locator('#source').fill('# 乙未保存');
     await drop([a, b]);
     await expect(page.getByRole('tab')).toHaveCount(3);
     await expect(page.locator('#source')).toHaveValue('# 乙未保存');
     await page.locator('#save').click();
     await expect.poll(() => fs.readFileSync(b, 'utf8')).toBe('# 乙未保存');
+    await expect(page.locator('#source')).not.toHaveAttribute('readonly');
     fs.writeFileSync(b, '乙外部修改');
     await page.locator('#source').fill('不应该覆盖'); await page.locator('#save').click();
     await expect(page.locator('#notice')).toContainText('其他程序修改');
@@ -58,10 +61,20 @@ const assert = require('node:assert/strict');
     await page.locator('button[value=cancel]').click();
     await page.getByRole('tab', { name: '● 甲.md', exact: true }).click();
     await expect(page.locator('#source')).toHaveValue('甲关闭时保留');
+    const wordPath = path.join(folder, '未保存内容.docx');
+    const wordSource = '# 中文标题\n\n| 学科 | 目标 |\n| --- | --- |\n| 数学 | 掌握概念 |\n\n$x^2$';
+    await page.locator('#new').click(); await page.locator('#mode').click();
+    await page.locator('#source').fill(wordSource);
+    const wordResult = await page.evaluate(destination => window.__TAURI_INTERNALS__.invoke('export_word', {
+      content: document.querySelector('#source').value, title: '未命名.md', sourcePath: null, destination,
+    }), wordPath);
+    assert.match(wordResult, /1 个公式 · 1 个表格/);
+    assert.equal(fs.readFileSync(wordPath).subarray(0, 2).toString(), 'PK');
+    await expect(page.locator('#source')).toHaveValue(wordSource);
     assert.deepEqual(errors, []);
     await page.screenshot({ path: path.join(__dirname, 'native-tabs.png') });
     fs.writeFileSync(path.join(__dirname, 'native-tabs-results.json'), JSON.stringify({
-      passed: true, checks: ['native drop event -> Rust file read -> tabs', 'independent native file saves', 'duplicate drop preserves unsaved content', 'external conflict protection', 'close tab confirmation', 'cancel window close preserves all tabs'],
+      passed: true, checks: ['native drop event -> Rust file read -> tabs', 'independent native file saves', 'duplicate drop preserves unsaved content', 'external conflict protection', 'close tab confirmation', 'cancel window close preserves all tabs', 'unsaved tab exports editable Word with a table and equation'],
       limitation: 'Drop events injected through Tauri; physical Explorer mouse drag and native picker multi-selection not automated',
     }, null, 2));
     console.log('Native WebView2 integration: all checks passed');

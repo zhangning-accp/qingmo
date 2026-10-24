@@ -45,14 +45,14 @@ const welcome = `# 写下，思绪就清晰了。
 
 document.querySelector('#app')!.innerHTML = `
   <header><div class="brand"><span class="brand-mark">墨</span><b>轻墨</b><span class="version">预览版</span></div>
-  <nav><button id="new" title="Ctrl+N">新建</button><button id="open" title="Ctrl+O">打开</button><button id="save" class="primary" title="Ctrl+S">保存</button><button id="save-as">另存为</button></nav>
+  <nav><button id="new" title="Ctrl+N">新建</button><button id="open" title="Ctrl+O">打开</button><button id="save" class="primary" title="Ctrl+S">保存</button><button id="save-as">另存为</button><button id="export-word">导出 Word</button></nav>
   <div class="filename" id="filename">未命名.md</div><button id="mode" title="Ctrl+/">〈/〉 源码</button><button id="focus" title="隐藏侧栏">专注</button></header>
   <div id="tabs" role="tablist" aria-label="打开的文档"></div>
   <div id="drop-hint" hidden>松开鼠标，打开文件<br><small>支持一次拖入多个 Markdown / TXT 文件</small></div>
   <div class="layout"><aside><div class="aside-label">文档大纲 <span>OUTLINE</span></div><div id="outline"></div><div class="aside-bottom"><span class="dot"></span> 本地写作<br><small>拖入文件即可打开</small></div></aside>
   <main><div class="paper-top"><span>一页空白，无限可能</span><span>MARKDOWN / 轻墨</span></div>
   <div class="table-tools"><button id="insert-table">＋ 插入表格</button><span class="divider"></span><button data-table="row">＋ 行</button><button data-table="column">＋ 列</button><button data-table="deleteRow">删行</button><button data-table="deleteColumn">删列</button><button data-table="deleteTable">删除表格</button><span class="table-hint">点击单元格后可增删行列</span></div>
-  <div id="notice" role="status" hidden></div><div id="editor"></div><textarea id="source" aria-label="Markdown 源码" spellcheck="false" hidden></textarea>
+  <div id="notice" role="status" hidden></div><div id="editor"></div><div id="source-shell" hidden><div id="line-gutter" aria-hidden="true"></div><textarea id="source" aria-label="Markdown 源码" spellcheck="false" wrap="off"></textarea></div>
   </main></div><footer><span id="status">正在准备纸面…</span><span id="count"></span><span id="startup"></span><span>UTF-8 · Markdown</span></footer>
   <dialog id="unsaved"><h2>保存这次修改？</h2><p>文档有尚未保存的内容。</p><div><button value="cancel">继续编辑</button><button value="discard">放弃修改</button><button value="save" class="primary">保存</button></div></dialog>`;
 
@@ -146,8 +146,21 @@ if (restored) notice('已恢复上次未保存的草稿，每份草稿各占一�
 const elapsed = native ? await invoke<number>('editor_ready') : Math.round(performance.now());
 $('#startup').textContent = `编辑就绪 ${(elapsed / 1000).toFixed(2)} s`;
 
-function changedSource() { content = $<HTMLTextAreaElement>('#source').value; refresh(); clearTimeout(draftTimer); draftTimer = setTimeout(persistDraft, 500); }
+function updateLineNumbers() {
+  const source = $<HTMLTextAreaElement>('#source');
+  if (!sourceMode) return;
+  const lineHeight = 26.6;
+  const first = Math.max(0, Math.floor((source.scrollTop - 32) / lineHeight));
+  const total = source.value.split('\n').length;
+  const visible = Math.min(total - first, Math.ceil((source.clientHeight + 32) / lineHeight) + 2);
+  const gutter = $('#line-gutter');
+  gutter.textContent = Array.from({ length: Math.max(visible, 0) }, (_, i) => String(first + i + 1)).join('\n');
+  gutter.style.transform = `translateY(${32 + first * lineHeight - source.scrollTop}px)`;
+}
+function changedSource() { content = $<HTMLTextAreaElement>('#source').value; updateLineNumbers(); refresh(); clearTimeout(draftTimer); draftTimer = setTimeout(persistDraft, 500); }
 $('#source').addEventListener('input', changedSource);
+$('#source').addEventListener('scroll', updateLineNumbers);
+new ResizeObserver(updateLineNumbers).observe($<HTMLTextAreaElement>('#source'));
 async function setContent(value: string) {
   switching = true;
   try {
@@ -156,13 +169,14 @@ async function setContent(value: string) {
     content = value; $<HTMLTextAreaElement>('#source').value = value;
   }
   finally { switching = false; }
-  refresh(); updateOutline(); tableState();
+  refresh(); updateOutline(); tableState(); updateLineNumbers();
 }
 async function toggleMode() {
   if (sourceMode) await setContent(content);
   sourceMode = !sourceMode;
-  $('#editor').hidden = sourceMode; $('#source').hidden = !sourceMode;
+  $('#editor').hidden = sourceMode; $('#source-shell').hidden = !sourceMode;
   if (sourceMode) { $<HTMLTextAreaElement>('#source').value = content; $('#source').focus(); }
+  updateLineNumbers();
   $('#mode').textContent = sourceMode ? '◉ 排版' : '〈/〉 源码';
   $<HTMLButtonElement>('#insert-table').disabled = sourceMode;
   $('#outline').style.visibility = sourceMode ? 'hidden' : 'visible'; tableState();
@@ -208,11 +222,11 @@ async function activate(id: string) {
   } finally { switching = false; }
   $<HTMLTextAreaElement>('#source').value = content;
   $<HTMLTextAreaElement>('#source').setSelectionRange(...next.sourceSelection);
-  $('#editor').hidden = sourceMode; $('#source').hidden = !sourceMode;
+  $('#editor').hidden = sourceMode; $('#source-shell').hidden = !sourceMode;
   $('#mode').textContent = sourceMode ? '◉ 排版' : '〈/〉 源码';
   $<HTMLButtonElement>('#insert-table').disabled = sourceMode;
   $('#outline').style.visibility = sourceMode ? 'hidden' : 'visible';
-  refresh(); updateOutline(); tableState(); $('main').scrollTop = next.scroll;
+  refresh(); updateOutline(); tableState(); updateLineNumbers(); $('main').scrollTop = next.scroll;
   $('#tabs .active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
 }
 async function save(saveAs = false): Promise<boolean> {
@@ -225,6 +239,14 @@ async function save(saveAs = false): Promise<boolean> {
     link.download = activeTab().title; link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000);
   }
   saved = snapshot; persistDraft(); notice(''); return true;
+}
+async function exportWord() {
+  if (!native) { notice('请在 Windows 桌面版中导出 Word。'); return; }
+  if (!content.trim()) { notice('当前标签没有可导出的内容。'); return; }
+  const result = await invoke<string | null>('export_word', {
+    content, title: activeTab().title, sourcePath: path, destination: null,
+  });
+  if (result) notice(result);
 }
 async function allowDiscard(): Promise<boolean> {
   if (!dirty()) return true;
@@ -291,6 +313,7 @@ async function run(action: () => Promise<unknown>) {
 }
 $('#new').onclick = () => void run(newDocument); $('#open').onclick = () => void run(open);
 $('#save').onclick = () => void run(() => save()); $('#save-as').onclick = () => void run(() => save(true));
+$('#export-word').onclick = () => void run(exportWord);
 $('#mode').onclick = () => void run(toggleMode); $('#focus').onclick = () => document.body.classList.toggle('focused');
 $('#insert-table').onpointerdown = event => event.preventDefault();
 $('#insert-table').onclick = () => { if (!busy) crepe.editor.action(insert('\n\n| 标题一 | 标题二 |\n| --- | --- |\n| 内容 | 内容 |\n\n')); };
@@ -304,6 +327,19 @@ document.querySelectorAll<HTMLButtonElement>('[data-table]').forEach(button => {
   };
 });
 $('#editor').addEventListener('keyup', tableState); $('#editor').addEventListener('pointerup', () => setTimeout(tableState));
+$('#editor').addEventListener('paste', event => {
+  if (sourceMode || busy) return;
+  syncContent();
+  const raw = event.clipboardData?.getData('text/plain') || '';
+  const blockMarkup = /^(?:\s{0,3}(?:#{1,6}\s|[-*+]\s|>\s|\d+\.\s|```|~~~|\|.+\|))/m.test(raw);
+  const inlineMarkup = /(?:\*\*[^*\n]+\*\*|__[^_\n]+__|\[[^\]\n]+\]\([^)]+\)|`[^`\n]+`|\$[^$\n]+\$)/.test(raw);
+  if (content.trim() || !(blockMarkup || inlineMarkup)) return;
+  event.preventDefault(); event.stopImmediatePropagation();
+  switching = true;
+  try { crepe.editor.action(replaceAll(raw)); lastDoc = crepe.editor.action(ctx => ctx.get(editorViewCtx).state.doc); }
+  finally { switching = false; }
+  content = raw; refresh(); updateOutline(); tableState(); persistDraft();
+}, true);
 document.addEventListener('keydown', event => {
   if (event.isComposing || !(event.ctrlKey || event.metaKey)) return;
   const key = event.key.toLowerCase();
