@@ -40,6 +40,27 @@ test('ordered and unordered list markers align with their first text line', asyn
   await page.screenshot({ path: 'qa/list-layout.png' });
 });
 
+test('footer counts selected characters in source and layout views', async ({ page }) => {
+  await page.locator('#new').click();
+  await expect(page.locator('#selected-count')).toBeHidden();
+  await page.locator('#mode').click();
+  const source = page.locator('#source');
+  await source.fill('甲 乙\n丙丁');
+  await source.selectText();
+  await expect(page.locator('#selected-count')).toHaveText('已选 4 字符');
+  await source.press('ArrowRight');
+  await expect(page.locator('#selected-count')).toBeHidden();
+  await source.fill('**加粗** 和文本');
+  await source.selectText();
+  await expect(page.locator('#selected-count')).toBeVisible();
+  await page.locator('#mode').click();
+  await expect(page.locator('#selected-count')).toBeHidden();
+  await page.locator('.ProseMirror strong').selectText();
+  await expect(page.locator('#selected-count')).toHaveText('已选 2 字符');
+  await page.locator('#new').click();
+  await expect(page.locator('#selected-count')).toBeHidden();
+});
+
 test('immediate save includes last keystrokes and source switching preserves text', async ({ page }) => {
   await page.locator('#new').click();
   await page.locator('.ProseMirror').click();

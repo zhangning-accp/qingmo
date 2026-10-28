@@ -134,10 +134,15 @@ const assert = require('node:assert/strict');
     }, { timeout: 10_000 }).toBe(false);
     await page.getByRole('tab', { name: '后台更新.md', exact: true }).click();
     await expect(page.locator('.ProseMirror h1')).toHaveText('后台磁盘新内容');
+    await page.locator('.ProseMirror h1').selectText();
+    await expect(page.locator('#selected-count')).toHaveText('已选 7 字符');
+    await page.locator('#mode').click();
+    await page.locator('#source').selectText();
+    await expect(page.locator('#selected-count')).toHaveText('已选 8 字符');
     assert.deepEqual(errors, []);
     await page.screenshot({ path: path.join(__dirname, 'native-tabs.png') });
     fs.writeFileSync(path.join(__dirname, 'native-tabs-results.json'), JSON.stringify({
-      passed: true, nativeLargeOpenMs, checks: ['native drop event -> Rust file read -> tabs', 'independent native file saves', 'duplicate drop preserves unsaved content', 'external conflict protection', 'clean external changes automatically reload', 'inactive external changes refresh before tab activation', 'dirty external changes preserve local content and offer explicit reload', 'close tab confirmation', 'cancel window close preserves all tabs', 'unsaved tab exports editable Word with a table and equation', 'Chinese labels render bold without rewriting source', 'large documents open in source mode and switch between tabs', 'YAML metadata keeps line breaks and source text'],
+      passed: true, nativeLargeOpenMs, checks: ['native drop event -> Rust file read -> tabs', 'independent native file saves', 'duplicate drop preserves unsaved content', 'external conflict protection', 'clean external changes automatically reload', 'inactive external changes refresh before tab activation', 'dirty external changes preserve local content and offer explicit reload', 'selected character count in source and layout views', 'close tab confirmation', 'cancel window close preserves all tabs', 'unsaved tab exports editable Word with a table and equation', 'Chinese labels render bold without rewriting source', 'large documents open in source mode and switch between tabs', 'YAML metadata keeps line breaks and source text'],
       limitation: 'Drop events injected through Tauri; physical Explorer mouse drag and native picker multi-selection not automated',
     }, null, 2));
     console.log(`Native WebView2 integration: all checks passed; 6 large documents opened in ${nativeLargeOpenMs} ms`);
