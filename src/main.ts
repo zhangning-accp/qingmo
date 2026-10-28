@@ -85,7 +85,7 @@ function restoreFrontmatter(markdown: string, original: string): string {
 }
 
 document.querySelector('#app')!.innerHTML = `
-  <header><div class="brand"><span class="brand-mark">墨</span><b>轻墨</b><span class="version">0.4.2</span></div>
+  <header><div class="brand"><span class="brand-mark">墨</span><b>轻墨</b><span class="version">0.4.3</span></div>
   <nav><button id="new" title="Ctrl+N">新建</button><button id="open" title="Ctrl+O">打开</button><button id="save" class="primary" title="Ctrl+S">保存</button><button id="save-as">另存为</button><button id="export-word">导出 Word</button></nav>
   <div class="filename" id="filename">未命名.md</div><button id="mode" title="Ctrl+/">〈/〉 源码</button><button id="focus" title="隐藏侧栏">专注</button></header>
   <div id="tabs" role="tablist" aria-label="打开的文档"></div>

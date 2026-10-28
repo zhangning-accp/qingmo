@@ -21,6 +21,25 @@ test('table editing adds and removes rows and columns, supports undo', async ({ 
   await expect(table.locator('tr')).toHaveCount(3);
 });
 
+test('ordered and unordered list markers align with their first text line', async ({ page }) => {
+  await page.locator('#new').click();
+  await page.locator('#mode').click();
+  await page.locator('#source').fill('9. 第九项内容\n10. 第十项内容\n\n- 无序第一项\n- 无序第二项\n\n普通段落');
+  await page.locator('#mode').click();
+  const items = page.locator('.milkdown-list-item-block li');
+  await expect(items).toHaveCount(4);
+  for (let index = 0; index < 4; index++) {
+    const offsets = await items.nth(index).evaluate(item => {
+      const label = item.querySelector('.label-wrapper')!.getBoundingClientRect();
+      const text = item.querySelector('.children > .content-dom > p')!.getBoundingClientRect();
+      return { labelTop: label.top, textTop: text.top };
+    });
+    expect(Math.abs(offsets.labelTop - offsets.textTop)).toBeLessThan(3);
+  }
+  expect(await page.locator('.ProseMirror > p').last().evaluate(element => getComputedStyle(element).marginTop)).toBe('16px');
+  await page.screenshot({ path: 'qa/list-layout.png' });
+});
+
 test('immediate save includes last keystrokes and source switching preserves text', async ({ page }) => {
   await page.locator('#new').click();
   await page.locator('.ProseMirror').click();
