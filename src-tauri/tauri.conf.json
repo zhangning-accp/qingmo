@@ -13,6 +13,7 @@
     "windows": [
       {
         "title": "轻墨",
+        "theme": "Dark",
         "width": 1150,
         "height": 800,
         "minWidth": 760,
