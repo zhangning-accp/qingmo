@@ -1,10 +1,20 @@
 # 轻墨 0.4.4 · Windows Markdown 编辑器
 
+写下 Markdown，直接看见排版；在多个文档间切换，也能随时查看源码。
+
+### 排版视图
+
+![轻墨编辑界面](docs/preview.png)
+
+### 多标签与源码视图
+
+![轻墨多标签源码编辑界面](docs/source-preview.png)
+
+支持拖入多个文件、源码行号、表格编辑和导出 Word。
+
 ## 运行与更新
 
 这个仓库提供源码。按下方「开发」步骤安装依赖后，执行 `npm run package`，生成的程序位于 `src-tauri/target/release/qingmo.exe`。需要 Windows 10/11 和 Microsoft Edge WebView2 Runtime；界面资源随程序打包，无需联网加载，不注册文件关联。更新已安装的旧版前，请先保存文档并退出。
-
-![轻墨编辑界面](docs/preview.png)
 
 当前界面采用深蓝灰底色、蓝橙细光边与立体标签页：选中标签有顶部高光、底部蓝光和柔和阴影。编辑区、源码区、表格工具、提示框及启动画面统一为深色；光效静态绘制，保留原有编辑操作和系统窗口按钮。
 
