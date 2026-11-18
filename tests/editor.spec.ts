@@ -40,6 +40,28 @@ test('ordered and unordered list markers align with their first text line', asyn
   await page.screenshot({ path: 'qa/list-layout.png' });
 });
 
+test('caret follows logical lines, selection direction and table cells in both modes', async ({ page }) => {
+  await page.locator('#new').click();
+  const caret = page.locator('#caret');
+  await expect(caret).toHaveText('第 1 行，第 1 列');
+  await page.locator('#mode').click();
+  const source = page.locator('#source');
+  await source.fill('# 标题\n\n**甲😀乙**\n\n| A | B |\n|---|---|\n| C | D |');
+  await source.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(11, 13, 'backward'));
+  await expect(caret).toHaveText('第 3 行，第 5 列');
+  await expect(page.locator('#lines')).toHaveText('7 行');
+  await page.locator('#mode').click();
+  await page.locator('.ProseMirror strong').selectText();
+  await expect(caret).toHaveText('第 2 行，第 4 列');
+  await page.locator('.ProseMirror td').last().click();
+  await page.keyboard.press('End');
+  await expect(caret).toHaveText('第 4 行，第 4 列');
+  await page.keyboard.press('Control+End');
+  await expect(caret).toHaveText('第 5 行，第 1 列');
+  await expect(page.locator('#layout-lines')).toHaveText('排版共 5 行');
+  await expect(page.locator('#lines')).toHaveText('7 行');
+});
+
 test('footer counts selected characters in source and layout views', async ({ page }) => {
   await page.locator('#new').click();
   await expect(page.locator('#selected-count')).toBeHidden();

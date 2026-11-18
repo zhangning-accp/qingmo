@@ -19,6 +19,7 @@ import '@milkdown/crepe/theme/common/list-item.css';
 import '@milkdown/crepe/theme/common/toolbar.css';
 import '@milkdown/crepe/theme/common/table.css';
 import '@milkdown/crepe/theme/frame.css';
+import { layoutCaret, sourceLines } from './caret';
 import './style.css';
 
 const welcome = `# 写下，思绪就清晰了。
@@ -85,7 +86,7 @@ function restoreFrontmatter(markdown: string, original: string): string {
 }
 
 document.querySelector('#app')!.innerHTML = `
-  <header><div class="brand"><span class="brand-mark">墨</span><b>轻墨</b><span class="version">0.4.4</span></div>
+  <header><div class="brand"><span class="brand-mark">墨</span><b>轻墨</b><span class="version">0.4.5</span></div>
   <nav><button id="new" title="Ctrl+N">新建</button><button id="open" title="Ctrl+O">打开</button><button id="save" class="primary" title="Ctrl+S">保存</button><button id="save-as">另存为</button><button id="export-word">导出 Word</button></nav>
   <div class="filename" id="filename">未命名.md</div><button id="mode" title="Ctrl+/">〈/〉 源码</button><button id="focus" title="隐藏侧栏">专注</button></header>
   <div id="tabs" role="tablist" aria-label="打开的文档"></div>
@@ -94,7 +95,7 @@ document.querySelector('#app')!.innerHTML = `
   <main><div class="paper-top"><span>一页空白，无限可能</span><span>MARKDOWN / 轻墨</span></div>
   <div class="table-tools"><button id="insert-table">＋ 插入表格</button><span class="divider"></span><button data-table="row">＋ 行</button><button data-table="column">＋ 列</button><button data-table="deleteRow">删行</button><button data-table="deleteColumn">删列</button><button data-table="deleteTable">删除表格</button><span class="table-hint">点击单元格后可增删行列</span></div>
   <div id="notice" role="status" hidden><span id="notice-text"></span><button id="reload-external" hidden>重新载入</button><button id="notice-close" aria-label="关闭提示">×</button></div><div id="editor"></div><div id="source-shell" hidden><div id="line-gutter" aria-hidden="true"></div><textarea id="source" aria-label="Markdown 源码" spellcheck="false" wrap="off"></textarea></div>
-  </main></div><footer><span id="status">正在准备纸面…</span><span id="count"></span><span id="selected-count" hidden></span><span id="lines"></span><span id="startup"></span><span>UTF-8 · Markdown</span></footer>
+  </main></div><footer><span id="status">正在准备纸面…</span><span id="count"></span><span id="selected-count" hidden></span><span id="caret"></span><span id="layout-lines" hidden></span><span title="Markdown 源文件总行数">共 <span id="lines"></span>（源码）</span><span id="startup"></span><span>UTF-8 · Markdown</span></footer>
   <dialog id="unsaved"><h2>保存这次修改？</h2><p>文档有尚未保存的内容。</p><div><button value="cancel">继续编辑</button><button value="discard">放弃修改</button><button value="save" class="primary">保存</button></div></dialog>
   <dialog id="external-confirm"><h2>重新载入外部文件？</h2><p>这会放弃当前标签尚未保存的修改，改用磁盘上的文件内容。</p><div><button value="cancel">保留当前修改</button><button value="reload" class="primary">放弃修改并重新载入</button></div></dialog>`;
 
@@ -104,12 +105,10 @@ let content = welcome, saved = welcome, path: string | null = null, sourceMode =
 let draftTimer: ReturnType<typeof setTimeout>;
 let draftError = false;
 let closing = false;
-type Tab = { id: string; title: string; path: string | null; content: string; saved: string; sourceMode: boolean; fastOpen: boolean; state?: EditorState; scroll: number; sourceSelection: [number, number]; externalChanged?: boolean; externalError?: string };
+type Tab = { id: string; title: string; path: string | null; content: string; saved: string; sourceMode: boolean; fastOpen: boolean; state?: EditorState; scroll: number; sourceSelection: [number, number, 'forward' | 'backward' | 'none']; externalChanged?: boolean; externalError?: string };
 let untitled = 0;
 function countLines(text: string): number {
-  let lines = 1;
-  for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) === 10) lines++;
-  return lines;
+  return sourceLines(text).starts.length;
 }
 const countCharacters = (text: string): number => text.replace(/\s/g, '').length;
 function fastOpen(text: string): boolean {
@@ -120,7 +119,7 @@ function fastOpen(text: string): boolean {
 }
 function makeTab(text = '', filePath: string | null = null, id: string = crypto.randomUUID(), title?: string): Tab {
   const large = fastOpen(text);
-  return { id, title: title || filePath?.split(/[\\/]/).pop() || `未命名 ${++untitled}.md`, path: filePath, content: text, saved: text, sourceMode: large, fastOpen: large, scroll: 0, sourceSelection: [0, 0] };
+  return { id, title: title || filePath?.split(/[\\/]/).pop() || `未命名 ${++untitled}.md`, path: filePath, content: text, saved: text, sourceMode: large, fastOpen: large, scroll: 0, sourceSelection: [0, 0, 'none'] };
 }
 const tabs: Tab[] = [];
 try {
@@ -177,19 +176,28 @@ function persistDraft() {
   } catch { draftError = true; notice('草稿缓存失败，请及时按 Ctrl+S 保存到文件。'); }
   refresh();
 }
-function updateSelectedCount() {
+function updateSelectionStatus() {
   if (!editorReady) return;
   let selected = '';
   let hasSelection = false;
+  let position: { line: number; column: number };
+  const layoutTotal = $('#layout-lines');
+  layoutTotal.hidden = sourceMode;
   if (sourceMode) {
     const source = $<HTMLTextAreaElement>('#source');
+    const head = source.selectionDirection === 'backward' ? source.selectionStart : source.selectionEnd;
+    position = sourceLines(content).at(head);
     hasSelection = source.selectionStart !== source.selectionEnd;
     if (hasSelection) selected = source.value.slice(source.selectionStart, source.selectionEnd);
   } else {
     const { doc, selection } = crepe.editor.action(ctx => ctx.get(editorViewCtx).state);
+    const caret = layoutCaret(doc, selection.head);
+    position = caret;
+    layoutTotal.textContent = `排版共 ${caret.total} 行`;
     hasSelection = !selection.empty;
     if (hasSelection) selected = doc.textBetween(selection.from, selection.to, '\n');
   }
+  $('#caret').textContent = `第 ${position.line} 行，第 ${position.column} 列`;
   const display = $('#selected-count');
   display.hidden = !hasSelection;
   if (hasSelection) display.textContent = `已选 ${countCharacters(selected).toLocaleString()} 字符`;
@@ -200,7 +208,7 @@ function refresh() {
   $('#filename').textContent = `${dirty() ? '● ' : ''}${name}`;
   $('#filename').title = path || name;
   $('#count').textContent = `${countCharacters(content).toLocaleString()} 字符`;
-  updateSelectedCount();
+  updateSelectionStatus();
   $('#lines').textContent = `${sourceLineCount.toLocaleString()} 行`;
   $('#status').textContent = dirty() ? (draftError ? '有未保存的修改' : '有修改 · 本地草稿保护') : '已保存';
   if (!path && !dirty()) $('#status').textContent = content === welcome ? '示例文档 · 随时开始' : '空白文档';
@@ -232,8 +240,9 @@ lastDoc = crepe.editor.action(ctx => ctx.get(editorViewCtx).state.doc);
 $('#editor').hidden = sourceMode; $('#source-shell').hidden = !sourceMode;
 if (sourceMode) { $<HTMLTextAreaElement>('#source').value = content; $('#mode').textContent = '◉ 排版'; $<HTMLButtonElement>('#insert-table').disabled = true; $('#outline').style.visibility = 'hidden'; }
 refresh(); if (!sourceMode) updateOutline(); tableState();
-document.addEventListener('selectionchange', () => requestAnimationFrame(updateSelectedCount));
-$('#source').addEventListener('select', updateSelectedCount);
+document.addEventListener('selectionchange', () => requestAnimationFrame(updateSelectionStatus));
+$('#source').addEventListener('select', updateSelectionStatus);
+$('#source').addEventListener('selectionchange', updateSelectionStatus);
 if (restored) notice('已恢复上次未保存的草稿，每份草稿各占一个标签。请另存为文件。');
 const elapsed = native ? await invoke<number>('editor_ready') : Math.round(performance.now());
 $('#startup').textContent = `编辑就绪 ${(elapsed / 1000).toFixed(2)} s`;
@@ -291,7 +300,7 @@ async function toggleMode() {
   $('#outline').style.visibility = sourceMode ? 'hidden' : 'visible';
   if (!sourceMode) updateOutline();
   tableState();
-  updateSelectedCount();
+  updateSelectionStatus();
 }
 function checkpoint() {
   Object.assign(activeTab(), { content, saved, path, sourceMode });
@@ -331,7 +340,8 @@ async function activate(id: string) {
   const previous = activeTab();
   if (editorTabId === previous.id) previous.state = crepe.editor.action(ctx => ctx.get(editorViewCtx).state);
   previous.scroll = $('main').scrollTop;
-  previous.sourceSelection = [$<HTMLTextAreaElement>('#source').selectionStart, $<HTMLTextAreaElement>('#source').selectionEnd];
+  const source = $<HTMLTextAreaElement>('#source');
+  previous.sourceSelection = [source.selectionStart, source.selectionEnd, source.selectionDirection];
   activeId = id; const next = activeTab();
   content = next.content; saved = next.saved; path = next.path; sourceMode = next.sourceMode;
   renderTabs(); revealActiveTab();

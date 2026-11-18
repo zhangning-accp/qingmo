@@ -190,7 +190,9 @@ main { flex: 1; min-width: 0; overflow: auto; padding: 0 clamp(18px, 3%, 48px); 
 .divider { height: 14px; border-left: 1px solid #3a4c64; margin: 0 7px; }
 .table-hint { font-size: 11px; color: var(--muted); margin-left: auto; }
 footer { min-height: 32px; flex-shrink: 0; border-top: 1px solid #35475e; border-radius: 0 0 11px 11px; background: linear-gradient(90deg, #1b2a3e, #1a2636 70%, #2b2a30); display: flex; align-items: center; gap: 22px; font-size: 11px; color: #aebed3; padding: 0 20px; font-variant-numeric: tabular-nums; }
-footer span:first-child { flex: 1; }
+footer > span { white-space: nowrap; }
+footer #status { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 1000px) { footer #startup { display: none; } }
 #selected-count { color: #b5d7ff; }
 .milkdown {
   --crepe-font-default: "Segoe UI", "Microsoft YaHei UI", sans-serif;
