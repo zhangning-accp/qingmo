@@ -1,16 +1,28 @@
-# 轻墨 0.4.4 · Windows Markdown 编辑器
+# 轻墨 Qingmo · Markdown 编辑器与 Markdown 转 Word（md2word）工具
 
-写下 Markdown，直接看见排版；在多个文档间切换，也能随时查看源码。
+轻墨是一款用 Rust 和 Tauri 开发的 Windows Markdown 编辑器。写下 Markdown 就能看见排版，也可以切换源码、同时打开多个文件，或将 `.md` 转为可编辑的 Word（`.docx`）。
+
+- **Markdown 转 Word / md2word**：点击「导出 Word」生成 `.docx`，保留标题、可编辑表格和常见公式。
+- **直接编辑排版**：正文和表格都能在排版视图中修改，表格可增删行列。
+- **多文档工作**：拖入多个文件，在标签页间切换；源码视图有行号，底部显示总行数和选区字符数。
 
 ### 排版视图
 
 ![轻墨编辑界面](docs/preview.png)
 
+### 排版视图中直接编辑表格
+
+![轻墨排版视图中的可编辑表格](docs/table-edit-preview.png)
+
+点击单元格即可修改内容；表格工具可增删行列。
+
 ### 多标签与源码视图
 
 ![轻墨多标签源码编辑界面](docs/source-preview.png)
 
-支持拖入多个文件、源码行号、表格编辑和导出 Word。
+## Markdown 转 Word（md2word）
+
+打开 Markdown 文件或新建标签粘贴内容后，点击顶部「导出 Word」，选择保存位置，即可得到可继续编辑的 `.docx` 文件。Word 导出支持标题、段落、列表、表格及常见数学公式；复杂公式和不支持的资源会在编辑器中提示。
 
 ## 运行与更新
 
