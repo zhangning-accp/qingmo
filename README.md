@@ -1,5 +1,7 @@
 # 轻墨 Qingmo · Markdown 编辑器与 Markdown 转 Word（md2word）工具
 
+**Markdown 表格难改？用轻墨，点格就能改，改完交 Word。**
+
 轻墨是一款用 Rust 和 Tauri 开发的 Windows Markdown 编辑器。写下 Markdown 就能看见排版，也可以切换源码、同时打开多个文件，或将 `.md` 转为可编辑的 Word（`.docx`）。
 
 - **Markdown 转 Word / md2word**：点击「导出 Word」生成 `.docx`，保留标题、可编辑表格和常见公式。
