@@ -197,7 +197,12 @@ footer #status { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsi
 [data-formula] { cursor: pointer; border-radius: 4px; }
 [data-formula]:hover, [data-formula].ProseMirror-selectednode { background: #304c6c; outline: 1px solid #86bdff; }
 [data-formula="math_block"] { overflow-x: auto; padding: 8px; margin-block: 18px; }
-#formula-editor { width: 660px; max-height: calc(100vh - 32px); overflow: auto; }
+#formula-editor { width: 820px; max-height: calc(100vh - 32px); overflow: auto; }
+#formula-field-host math-field { display: block; min-height: 70px; padding: 12px; margin-bottom: 16px; font-size: 25px; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; --caret-color: var(--blue); --selection-background-color: #365d88; --contains-highlight-background-color: #304c6c; }
+#formula-field-host math-field:focus-within { outline: 2px solid var(--blue); }
+#formula-keyboard { position: relative; flex-shrink: 0; --keyboard-background: #192637; --keycap-background: #304157; --keycap-text: #dce6f3; --keycap-secondary-background: #24354a; --keycap-secondary-text: #a0b1c7; --keycap-primary-background: #3b608b; --keycap-primary-text: #edf6ff; --keycap-shift-background: #24354a; --keyboard-toolbar-text: #dce6f3; --keyboard-toolbar-background: #192637; }
+#formula-source { margin-block: 16px; }
+#formula-source summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 #formula-editor h1 { margin: 0 0 20px; font-size: 22px; }
 #formula-editor textarea { display: block; width: 100%; margin-block: 8px 12px; padding: 12px; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; font: 15px/1.6 Consolas, monospace; resize: vertical; }
 #formula-editor textarea:focus-visible { outline: 2px solid var(--blue); }

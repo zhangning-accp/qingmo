@@ -1,6 +1,8 @@
 import type { EditorView } from '@milkdown/kit/prose/view';
 import { closeHistory } from '@milkdown/kit/prose/history';
 import { renderFormula } from './math';
+import type { MathfieldElement } from 'mathlive';
+import 'mathlive/fonts.css';
 
 export function createFormulaEditor(getView: () => EditorView, isSource: () => boolean, changedSource: () => void) {
   const dialog = document.createElement('dialog');
@@ -8,11 +10,16 @@ export function createFormulaEditor(getView: () => EditorView, isSource: () => b
   dialog.setAttribute('aria-labelledby', 'formula-title');
   dialog.innerHTML = `<h1 id="formula-title">编辑公式</h1>
     <form method="dialog">
-      <label for="formula-code">LaTeX 公式</label>
-      <textarea id="formula-code" autofocus spellcheck="false" rows="4" aria-describedby="formula-error" placeholder="例如 \\frac{1}{2} + x^{2}"></textarea>
+      <div id="formula-field-host"></div>
+      <p id="formula-loading" role="status">正在加载公式编辑器…</p>
       <div class="formula-options"><label><input id="formula-block" type="checkbox">独立成行</label><span>双击正文中的公式可以修改</span></div>
       <div class="formula-examples" aria-label="常用公式"></div>
-      <div id="formula-preview" aria-label="公式预览"></div>
+      <div id="formula-keyboard" role="group" aria-label="数学符号键盘"></div>
+      <details id="formula-source"><summary>LaTeX 源码</summary>
+        <label for="formula-code">LaTeX 公式</label>
+        <textarea id="formula-code" spellcheck="false" rows="2" aria-describedby="formula-error"></textarea>
+        <div id="formula-preview" aria-label="公式预览"></div>
+      </details>
       <p id="formula-error" role="status"></p>
       <div class="formula-actions"><button value="cancel" formnovalidate>取消</button><button id="formula-apply" value="apply" class="primary">应用公式</button></div>
     </form>`;
@@ -22,20 +29,26 @@ export function createFormulaEditor(getView: () => EditorView, isSource: () => b
   const apply = dialog.querySelector<HTMLButtonElement>('#formula-apply')!;
   const error = dialog.querySelector<HTMLElement>('#formula-error')!;
   let source = false, from = 0, to = 0;
+  let field: MathfieldElement | undefined;
+  let generation = 0;
+  let restoreKeyboard = () => {};
+  const loading = dialog.querySelector<HTMLElement>('#formula-loading')!;
+  const keyboardHost = dialog.querySelector<HTMLElement>('#formula-keyboard')!;
   function preview() {
     try {
       renderFormula(code.value, dialog.querySelector('#formula-preview')!, block.checked, true);
-      apply.disabled = !code.value.trim(); error.textContent = '';
+      apply.disabled = !field || !code.value.trim(); error.textContent = '';
     } catch (problem) {
       apply.disabled = true;
       error.textContent = `公式语法有误，请检查括号或命令。${String(problem).replace(/^.*?KaTeX parse error:/, '')}`;
     }
   }
-  code.oninput = preview; block.onchange = preview;
-  const examples = [ ['分数', '\\frac{1}{2}'], ['次方', 'x^{2}'], ['根号', '\\sqrt{x}'], ['乘除', '(-2) \\times (-3) \\div 4'], ['方程', 'x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}'] ];
+  code.oninput = () => { if (field) field.value = code.value; preview(); };
+  block.onchange = preview;
+  const examples = [ ['分数', '\\frac{#?}{#?}'], ['上标', '#?^{#?}'], ['下标', '#?_{#?}'], ['根号', '\\sqrt{#?}'], ['求和', '\\sum_{#?}^{#?}'] ];
   for (const [label, latex] of examples) {
     const button = document.createElement('button'); button.type = 'button'; button.textContent = label;
-    button.onclick = () => { code.setRangeText(latex, code.selectionStart, code.selectionEnd, 'end'); preview(); code.focus(); };
+    button.onclick = () => { if (!field) return; field.insert(latex); code.value = field.value; preview(); field.focus(); };
     dialog.querySelector('.formula-examples')!.append(button);
   }
   dialog.querySelector('form')!.onsubmit = event => {
@@ -53,7 +66,51 @@ export function createFormulaEditor(getView: () => EditorView, isSource: () => b
     }
     dialog.close();
   };
-  dialog.onclose = () => { dialog.returnValue = ''; };
+  dialog.addEventListener('keydown', event => {
+    if (event.key !== 'Escape') return;
+    if (event.composedPath().some(node => node instanceof Element && node.getAttribute('role') === 'menu')) event.preventDefault();
+    // MathLive otherwise consumes Escape before the native dialog can dismiss.
+    else event.stopPropagation();
+  }, true);
+  dialog.onclose = () => {
+    generation++;
+    restoreKeyboard(); restoreKeyboard = () => {};
+    field?.remove(); field = undefined;
+    dialog.returnValue = '';
+  };
+  async function loadField(request: number) {
+    try {
+      const { MathfieldElement } = await import('mathlive');
+      if (!dialog.open || request !== generation) return;
+      MathfieldElement.fontsDirectory = null;
+      MathfieldElement.soundsDirectory = null;
+      MathfieldElement.computeEngine = null;
+      field = new MathfieldElement();
+      field.setAttribute('aria-label', '可视化公式输入');
+      field.value = code.value;
+      field.mathVirtualKeyboardPolicy = 'manual';
+      field.addEventListener('input', () => { code.value = field!.value; preview(); });
+      dialog.querySelector('#formula-field-host')!.append(field);
+      const keyboard = window.mathVirtualKeyboard;
+      const container = keyboard.container;
+      const layouts = keyboard.layouts;
+      keyboard.container = keyboardHost;
+      keyboard.layouts = ['numeric', 'symbols', 'alphabetic', 'greek'];
+      const resize = () => { keyboardHost.style.height = `${keyboard.visible ? keyboard.boundingRect.height : 0}px`; };
+      keyboard.addEventListener('geometrychange', resize);
+      restoreKeyboard = () => {
+        keyboard.removeEventListener('geometrychange', resize);
+        keyboard.hide({ animate: false });
+        keyboard.container = container; keyboard.layouts = layouts;
+        keyboardHost.style.height = '0px';
+      };
+      loading.hidden = true; preview();
+      field.focus(); keyboard.show({ animate: false }); resize();
+    } catch {
+      if (!dialog.open || request !== generation) return;
+      loading.textContent = '公式编辑器加载失败，请关闭后重试。'; apply.disabled = true;
+    }
+  }
   return (position?: number) => {
     source = isSource(); code.value = ''; block.checked = false;
     if (source) {
@@ -70,6 +127,9 @@ export function createFormulaEditor(getView: () => EditorView, isSource: () => b
         block.checked = node.type.name === 'math_block';
       } else code.value = state.doc.textBetween(from, to);
     }
+    loading.textContent = '正在加载公式编辑器…'; loading.hidden = false;
+    dialog.querySelector<HTMLDetailsElement>('#formula-source')!.open = false;
     preview(); dialog.returnValue = ''; dialog.showModal();
+    void loadField(++generation);
   };
 }

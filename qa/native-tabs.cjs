@@ -69,16 +69,22 @@ const assert = require('node:assert/strict');
     await expect(page.locator('[data-formula] .katex')).toHaveCount(1);
     await page.locator('[data-formula]').dblclick();
     await expect(page.locator('#formula-code')).toHaveValue('x^2');
-    await page.locator('#formula-code').fill('x^3');
+    const mathField = page.locator('math-field');
+    await expect(mathField).toBeVisible();
+    await expect(page.locator('#formula-loading')).toBeHidden();
+    await mathField.press('Control+a'); await mathField.press('Backspace');
+    await page.getByRole('button', { name: '分数', exact: true }).click();
+    await mathField.press('1'); await mathField.press('Tab'); await mathField.press('2');
+    await page.screenshot({ path: path.join(__dirname, 'native-mathlive.png') });
     await page.locator('#formula-apply').click();
-    await expect(page.locator('[data-formula]')).toHaveAttribute('data-value', 'x^3');
+    await expect(page.locator('[data-formula]')).toHaveAttribute('data-value', '\\frac12');
     await page.locator('#mode').click();
     const wordResult = await page.evaluate(destination => window.__TAURI_INTERNALS__.invoke('export_word', {
       content: document.querySelector('#source').value, title: '未命名.md', sourcePath: null, destination,
     }), wordPath);
     assert.match(wordResult, /1 个公式 · 1 个表格/);
     assert.equal(fs.readFileSync(wordPath).subarray(0, 2).toString(), 'PK');
-    await expect(page.locator('#source')).toHaveValue(/\$x\^3\$/);
+    await expect(page.locator('#source')).toHaveValue(/\\frac12/);
     const labelSource = '**【选型依据】**PEP 四下 Unit4\n**【极简视觉约束】**无动画、少配图\n**【推送一致性】**本话题四模块\n**【交互双通道】**本话题所有训练步骤';
     await page.locator('#new').click(); await page.locator('#mode').click();
     await page.locator('#source').fill(labelSource); await page.locator('#mode').click();

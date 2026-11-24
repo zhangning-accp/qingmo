@@ -1,5 +1,39 @@
 import { test, expect } from '@playwright/test';
 
+test('MathLive visually edits fractions and keeps its keyboard usable inside the modal', async ({ page }) => {
+  const outside: string[] = [];
+  page.on('request', request => { if (/^https?:/.test(request.url()) && !request.url().startsWith('http://127.0.0.1:5173')) outside.push(request.url()); });
+  await page.goto('/');
+  await expect(page.locator('#startup')).toContainText('编辑就绪');
+  await page.locator('#new').click();
+  await page.locator('#insert-formula').click();
+  const field = page.locator('math-field');
+  await expect(field).toBeVisible();
+  await expect(page.locator('#formula-loading')).toBeHidden();
+  await page.getByRole('button', { name: '分数', exact: true }).click();
+  await field.press('1'); await field.press('Tab'); await field.press('2');
+  await expect.poll(() => field.evaluate((el: any) => el.value)).toBe('\\frac12');
+  await expect.poll(() => page.evaluate(() => (window as any).mathVirtualKeyboard.visible)).toBe(true);
+  expect((await page.locator('#formula-keyboard').boundingBox())!.height).toBeGreaterThan(100);
+  await page.locator('#formula-title').click();
+  await page.screenshot({ path: 'qa/mathlive-editor.png' });
+  await page.locator('#formula-apply').click();
+  await expect(page.locator('[data-formula]')).toHaveAttribute('data-value', '\\frac12');
+  await page.locator('[data-formula]').dblclick();
+  await expect.poll(() => field.evaluate((el: any) => el.value)).toBe('\\frac12');
+  await field.locator('[part="menu-toggle"]').click();
+  await expect(page.getByRole('menu')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('menu')).toBeHidden();
+  await expect(page.locator('#formula-editor')).toBeVisible();
+  await page.locator('#formula-keyboard [data-tooltip="Greek Letters"]:visible').click();
+  await page.locator('#formula-keyboard').getByText('α', { exact: true }).locator('visible=true').first().click();
+  await expect.poll(() => field.evaluate((el: any) => el.value)).toContain('\\alpha');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#formula-editor')).toBeHidden();
+  expect(outside).toEqual([]);
+});
+
 test('math renders, edits, roundtrips, cancels, rejects errors and stays literal in code', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('#startup')).toContainText('编辑就绪');
@@ -16,8 +50,10 @@ test('math renders, edits, roundtrips, cancels, rejects errors and stays literal
   const dialog = page.getByRole('dialog', { name: '编辑公式' });
   await expect(dialog).toBeVisible();
   await expect(page.locator('#formula-code')).toHaveValue('(-2)\\times(-3)');
+  await page.locator('#formula-source').evaluate(el => el.open = true);
   await page.locator('#formula-code').fill('\\frac{');
   await expect(page.locator('#formula-apply')).toBeDisabled();
+  await page.locator('#formula-source').evaluate(el => el.open = true);
   await page.locator('#formula-code').fill('x^{2}');
   await page.locator('#formula-apply').click();
   await expect(page.locator('[data-formula="math_inline"]').first()).toHaveAttribute('data-value', 'x^{2}');
@@ -28,6 +64,7 @@ test('math renders, edits, roundtrips, cancels, rejects errors and stays literal
   await expect(page.locator('#source')).toHaveValue(/x\^\{2\}/);
   await page.locator('#source').press('Control+End');
   await page.locator('#insert-formula').click();
+  await page.locator('#formula-source').evaluate(el => el.open = true);
   await page.locator('#formula-code').fill('\\sqrt{9}');
   await page.locator('#formula-block').check(); await page.locator('#formula-apply').click();
   await expect(page.locator('#source')).toHaveValue(/\$\$\n\\sqrt\{9\}\n\$\$/);
@@ -45,6 +82,7 @@ test('math renders, edits, roundtrips, cancels, rejects errors and stays literal
   await page.keyboard.press('Escape');
   await page.locator('#new').click();
   await page.locator('#insert-formula').click();
+  await page.locator('#formula-source').evaluate(el => el.open = true);
   await page.locator('#formula-code').fill('a^{2}+b^{2}');
   await page.locator('#formula-apply').click();
   await expect(page.locator('[data-formula="math_inline"]')).toHaveCount(1);
