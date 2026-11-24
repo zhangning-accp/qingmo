@@ -75,6 +75,16 @@ const assert = require('node:assert/strict');
     await mathField.press('Control+a'); await mathField.press('Backspace');
     await page.getByRole('button', { name: '分数', exact: true }).click();
     await mathField.press('1'); await mathField.press('Tab'); await mathField.press('2');
+    await page.evaluate(async () => {
+      await document.fonts.ready;
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    });
+    await page.locator('#formula-title').click();
+    const glyphs = await mathField.locator('.ML__cmr').evaluateAll(nodes => nodes.map(node => ({
+      text: node.textContent, top: node.getBoundingClientRect().top,
+    })));
+    assert(glyphs.find(g => g.text === '1').top < glyphs.find(g => g.text === '2').top,
+      'Native fraction numerator must appear above its denominator');
     await page.screenshot({ path: path.join(__dirname, 'native-mathlive.png') });
     await page.locator('#formula-apply').click();
     await expect(page.locator('[data-formula]')).toHaveAttribute('data-value', '\\frac12');
