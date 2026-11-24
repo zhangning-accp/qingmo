@@ -1,6 +1,6 @@
 {
   "name": "qingmo",
-  "version": "0.4.5",
+  "version": "0.4.6",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,7 +12,9 @@
   "dependencies": {
     "@milkdown/crepe": "7.22.3",
     "@milkdown/kit": "7.22.3",
-    "@tauri-apps/api": "2.11.1"
+    "@tauri-apps/api": "2.11.1",
+    "katex": "0.19.1",
+    "remark-math": "6.0.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.56",

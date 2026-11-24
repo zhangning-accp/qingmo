@@ -194,6 +194,22 @@ footer > span { white-space: nowrap; }
 footer #status { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 1000px) { footer #startup { display: none; } }
 #selected-count { color: #b5d7ff; }
+[data-formula] { cursor: pointer; border-radius: 4px; }
+[data-formula]:hover, [data-formula].ProseMirror-selectednode { background: #304c6c; outline: 1px solid #86bdff; }
+[data-formula="math_block"] { overflow-x: auto; padding: 8px; margin-block: 18px; }
+#formula-editor { width: 660px; max-height: calc(100vh - 32px); overflow: auto; }
+#formula-editor h1 { margin: 0 0 20px; font-size: 22px; }
+#formula-editor textarea { display: block; width: 100%; margin-block: 8px 12px; padding: 12px; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; font: 15px/1.6 Consolas, monospace; resize: vertical; }
+#formula-editor textarea:focus-visible { outline: 2px solid var(--blue); }
+.formula-options { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; font-size: 13px; }
+.formula-options span { color: var(--muted); }
+.formula-examples { display: flex; flex-wrap: wrap; gap: 6px; margin-block: 16px; }
+.formula-examples button { border-color: var(--line); }
+#formula-preview { min-height: 88px; padding: 18px; background: var(--bg); border-radius: 6px; overflow: auto; font-size: 20px; }
+#formula-error { min-height: 24px; color: #ffacac; overflow-wrap: anywhere; }
+.formula-actions { display: flex; justify-content: flex-end; gap: 8px; }
+dialog:modal { overscroll-behavior: contain; }
+dialog::backdrop { overflow: hidden; overscroll-behavior: contain; }
 .milkdown {
   --crepe-font-default: "Segoe UI", "Microsoft YaHei UI", sans-serif;
   --crepe-font-title: "Segoe UI", "Microsoft YaHei UI", sans-serif;

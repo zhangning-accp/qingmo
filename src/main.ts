@@ -20,6 +20,8 @@ import '@milkdown/crepe/theme/common/toolbar.css';
 import '@milkdown/crepe/theme/common/table.css';
 import '@milkdown/crepe/theme/frame.css';
 import { layoutCaret, sourceLines } from './caret';
+import { mathPlugins } from './math';
+import { createFormulaEditor } from './formula-editor';
 import './style.css';
 
 const welcome = `# 写下，思绪就清晰了。
@@ -86,14 +88,14 @@ function restoreFrontmatter(markdown: string, original: string): string {
 }
 
 document.querySelector('#app')!.innerHTML = `
-  <header><div class="brand"><span class="brand-mark">墨</span><b>轻墨</b><span class="version">0.4.5</span></div>
+  <header><div class="brand"><span class="brand-mark">墨</span><b>轻墨</b><span class="version">0.4.6</span></div>
   <nav><button id="new" title="Ctrl+N">新建</button><button id="open" title="Ctrl+O">打开</button><button id="save" class="primary" title="Ctrl+S">保存</button><button id="save-as">另存为</button><button id="export-word">导出 Word</button></nav>
   <div class="filename" id="filename">未命名.md</div><button id="mode" title="Ctrl+/">〈/〉 源码</button><button id="focus" title="隐藏侧栏">专注</button></header>
   <div id="tabs" role="tablist" aria-label="打开的文档"></div>
   <div id="drop-hint" hidden>松开鼠标，打开文件<br><small>支持一次拖入多个 Markdown / TXT 文件</small></div>
   <div class="layout"><aside><div class="aside-label">文档大纲 <span>OUTLINE</span></div><div id="outline"></div><div class="aside-bottom"><span class="dot"></span> 本地写作<br><small>拖入文件即可打开</small></div></aside>
   <main><div class="paper-top"><span>一页空白，无限可能</span><span>MARKDOWN / 轻墨</span></div>
-  <div class="table-tools"><button id="insert-table">＋ 插入表格</button><span class="divider"></span><button data-table="row">＋ 行</button><button data-table="column">＋ 列</button><button data-table="deleteRow">删行</button><button data-table="deleteColumn">删列</button><button data-table="deleteTable">删除表格</button><span class="table-hint">点击单元格后可增删行列</span></div>
+  <div class="table-tools"><button id="insert-table">＋ 插入表格</button><button id="insert-formula">∑ 公式</button><span class="divider"></span><button data-table="row">＋ 行</button><button data-table="column">＋ 列</button><button data-table="deleteRow">删行</button><button data-table="deleteColumn">删列</button><button data-table="deleteTable">删除表格</button><span class="table-hint">点击单元格后可增删行列</span></div>
   <div id="notice" role="status" hidden><span id="notice-text"></span><button id="reload-external" hidden>重新载入</button><button id="notice-close" aria-label="关闭提示">×</button></div><div id="editor"></div><div id="source-shell" hidden><div id="line-gutter" aria-hidden="true"></div><textarea id="source" aria-label="Markdown 源码" spellcheck="false" wrap="off"></textarea></div>
   </main></div><footer><span id="status">正在准备纸面…</span><span id="count"></span><span id="selected-count" hidden></span><span id="caret"></span><span id="layout-lines" hidden></span><span title="Markdown 源文件总行数">共 <span id="lines"></span>（源码）</span><span id="startup"></span><span>UTF-8 · Markdown</span></footer>
   <dialog id="unsaved"><h2>保存这次修改？</h2><p>文档有尚未保存的内容。</p><div><button value="cancel">继续编辑</button><button value="discard">放弃修改</button><button value="save" class="primary">保存</button></div></dialog>
@@ -143,6 +145,7 @@ const crepe = new CrepeBuilder({ root: '#editor', defaultValue: sourceMode ? '' 
 crepe.editor.config(ctx => ctx.update(uploadConfig.key, config => ({ ...config, uploader: async () => {
   notice('此预览版尚未支持图片粘贴，请暂用源码编辑图片链接。'); return [];
 }})));
+crepe.editor.use(mathPlugins);
 let lastDoc: object | undefined;
 let editorReady = false;
 let editorTabId: string | null = sourceMode ? null : activeId;
@@ -491,7 +494,7 @@ async function reloadExternal(id: string, discardLocal = false) {
 }
 let checkingExternal = false;
 async function checkExternal() {
-  if (!native || busy || checkingExternal || document.hidden) return;
+  if (!native || busy || checkingExternal || document.hidden || $<HTMLDialogElement>('#formula-editor')?.open) return;
   checkingExternal = true;
   try {
     const changes = await invoke<ExternalChange[]>('check_documents');
@@ -553,6 +556,7 @@ $('#editor').addEventListener('paste', event => {
   content = raw; sourceLineCount = countLines(raw); refresh(); updateOutline(); tableState(); persistDraft();
 }, true);
 document.addEventListener('keydown', event => {
+  if ($<HTMLDialogElement>('#formula-editor')?.open) return;
   if (event.isComposing || !(event.ctrlKey || event.metaKey)) return;
   const key = event.key.toLowerCase();
   if (key === 'tab') {
@@ -598,3 +602,16 @@ document.addEventListener('drop', event => {
 }, true);
 // Links in a document must never navigate away from the editor.
 $('#editor').addEventListener('click', event => { if ((event.target as HTMLElement).closest('a')) event.preventDefault(); }, true);
+
+const openFormula = createFormulaEditor(
+  () => crepe.editor.action(ctx => ctx.get(editorViewCtx)), () => sourceMode, changedSource,
+);
+$('#insert-formula').onpointerdown = event => event.preventDefault();
+$('#insert-formula').onclick = () => { if (!busy) { syncContent(); openFormula(); } };
+$('#editor').addEventListener('dblclick', event => {
+  const element = (event.target as HTMLElement).closest<HTMLElement>('[data-formula]');
+  if (!element || busy) return;
+  event.preventDefault();
+  const view = crepe.editor.action(ctx => ctx.get(editorViewCtx));
+  openFormula(view.posAtDOM(element, 0));
+});
