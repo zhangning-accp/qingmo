@@ -17,7 +17,7 @@ export function createFormulaEditor(getView: () => EditorView, isSource: () => b
       <div id="formula-keyboard" role="group" aria-label="数学符号键盘"></div>
       <details id="formula-source"><summary>LaTeX 源码</summary>
         <label for="formula-code">LaTeX 公式</label>
-        <textarea id="formula-code" spellcheck="false" rows="2" aria-describedby="formula-error"></textarea>
+        <textarea id="formula-code" spellcheck="false" rows="2"></textarea>
         <div id="formula-preview" aria-label="公式预览"></div>
       </details>
       <p id="formula-error" role="status"></p>
@@ -34,17 +34,39 @@ export function createFormulaEditor(getView: () => EditorView, isSource: () => b
   let restoreKeyboard = () => {};
   const loading = dialog.querySelector<HTMLElement>('#formula-loading')!;
   const keyboardHost = dialog.querySelector<HTMLElement>('#formula-keyboard')!;
-  function preview() {
-    try {
-      renderFormula(code.value, dialog.querySelector('#formula-preview')!, block.checked, true);
-      apply.disabled = !field || !code.value.trim(); error.textContent = '';
-    } catch (problem) {
+  function feedback(message = '', invalid = false) {
+    error.textContent = message;
+    error.classList.toggle('formula-hint', !invalid);
+    for (const input of [code, field]) {
+      if (!input) continue;
+      input.setAttribute('aria-invalid', String(invalid));
+      if (message) input.setAttribute('aria-describedby', 'formula-error');
+      else input.removeAttribute('aria-describedby');
+    }
+  }
+  function preview(showErrors = false) {
+    const target = dialog.querySelector<HTMLElement>('#formula-preview')!;
+    const blanks = code.value.match(/\\placeholder\b/g)?.length ?? 0;
+    if (blanks) {
       apply.disabled = true;
-      error.textContent = `公式语法有误，请检查括号或命令。${String(problem).replace(/^.*?KaTeX parse error:/, '')}`;
+      target.replaceChildren();
+      feedback(`还有 ${blanks} 个空白框待填写。点击空白框输入，或按 Tab 切换，填完后即可应用。`);
+      return;
+    }
+    try {
+      renderFormula(code.value, target, block.checked, true);
+      apply.disabled = !field || !code.value.trim(); feedback();
+    } catch {
+      apply.disabled = true;
+      target.replaceChildren();
+      feedback(showErrors
+        ? '公式语法有误，请检查括号是否配对，或展开 LaTeX 源码检查命令。'
+        : '公式尚未完成，请继续输入。完成后即可应用。', showErrors);
     }
   }
   code.oninput = () => { if (field) field.value = code.value; preview(); };
-  block.onchange = preview;
+  code.onblur = () => preview(true);
+  block.onchange = () => preview();
   const examples = [ ['分数', '\\frac{#?}{#?}'], ['上标', '#?^{#?}'], ['下标', '#?_{#?}'], ['根号', '\\sqrt{#?}'], ['求和', '\\sum_{#?}^{#?}'] ];
   for (const [label, latex] of examples) {
     const button = document.createElement('button'); button.type = 'button'; button.textContent = label;
@@ -53,7 +75,7 @@ export function createFormulaEditor(getView: () => EditorView, isSource: () => b
   }
   dialog.querySelector('form')!.onsubmit = event => {
     if ((event as SubmitEvent).submitter !== apply) return;
-    event.preventDefault(); preview(); if (apply.disabled) return;
+    event.preventDefault(); preview(true); if (apply.disabled) return;
     if (source) {
       const input = document.querySelector<HTMLTextAreaElement>('#source')!;
       const value = block.checked ? `\n\n$$\n${code.value.trim()}\n$$\n\n` : `$${code.value.trim()}$`;
@@ -90,6 +112,7 @@ export function createFormulaEditor(getView: () => EditorView, isSource: () => b
       field.value = code.value;
       field.mathVirtualKeyboardPolicy = 'manual';
       field.addEventListener('input', () => { code.value = field!.value; preview(); });
+      field.addEventListener('blur', () => preview(true));
       dialog.querySelector('#formula-field-host')!.append(field);
       const keyboard = window.mathVirtualKeyboard;
       const container = keyboard.container;

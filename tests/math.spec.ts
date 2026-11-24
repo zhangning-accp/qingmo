@@ -11,7 +11,14 @@ test('MathLive visually edits fractions and keeps its keyboard usable inside the
   await expect(field).toBeVisible();
   await expect(page.locator('#formula-loading')).toBeHidden();
   await page.getByRole('button', { name: '分数', exact: true }).click();
-  await field.press('1'); await field.press('Tab'); await field.press('2');
+  await expect(page.locator('#formula-error')).toContainText('2 个空白框待填写');
+  await expect(page.locator('#formula-error')).toHaveClass('formula-hint');
+  await expect(field).toHaveAttribute('aria-invalid', 'false');
+  await expect(page.locator('#formula-apply')).toBeDisabled();
+  await field.press('1'); await field.press('Tab');
+  await expect(page.locator('#formula-error')).toContainText('1 个空白框待填写');
+  await field.press('2');
+  await expect(page.locator('#formula-error')).toBeEmpty();
   await expect.poll(() => field.evaluate((el: any) => el.value)).toBe('\\frac12');
   await expect.poll(() => page.evaluate(() => (window as any).mathVirtualKeyboard.visible)).toBe(true);
   expect((await page.locator('#formula-keyboard').boundingBox())!.height).toBeGreaterThan(100);
@@ -32,6 +39,25 @@ test('MathLive visually edits fractions and keeps its keyboard usable inside the
   await page.keyboard.press('Escape');
   await expect(page.locator('#formula-editor')).toBeHidden();
   expect(outside).toEqual([]);
+});
+
+test('integral placeholder guides completion without exposing parser errors', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#startup')).toContainText('编辑就绪');
+  await page.locator('#new').click();
+  await page.locator('#insert-formula').click();
+  const field = page.locator('math-field');
+  await expect(page.locator('#formula-loading')).toBeHidden();
+  await field.evaluate((el: any) => el.insert('\\int_0^{\\infty}#?\\,\\mathrm{d}x'));
+  await expect(page.locator('#formula-error')).toContainText('1 个空白框待填写');
+  await expect(page.locator('#formula-error')).not.toContainText('Undefined control sequence');
+  await expect(page.locator('#formula-apply')).toBeDisabled();
+  await field.press('x');
+  await expect(page.locator('#formula-error')).toBeEmpty();
+  await expect(page.locator('#formula-apply')).toBeEnabled();
+  await page.locator('#formula-apply').click();
+  await expect(page.locator('[data-formula]')).toHaveAttribute('data-value', /int/);
+  await expect(page.locator('[data-formula]')).not.toHaveAttribute('data-value', /placeholder/);
 });
 
 test('math renders, edits, roundtrips, cancels, rejects errors and stays literal in code', async ({ page }) => {

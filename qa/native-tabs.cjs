@@ -74,6 +74,8 @@ const assert = require('node:assert/strict');
     await expect(page.locator('#formula-loading')).toBeHidden();
     await mathField.press('Control+a'); await mathField.press('Backspace');
     await page.getByRole('button', { name: '分数', exact: true }).click();
+    await expect(page.locator('#formula-error')).toContainText('2 个空白框待填写');
+    await expect(page.locator('#formula-error')).toHaveClass('formula-hint');
     await mathField.press('1'); await mathField.press('Tab'); await mathField.press('2');
     await page.evaluate(async () => {
       await document.fonts.ready;
