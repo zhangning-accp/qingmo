@@ -1,0 +1,11 @@
+Markdown 表格难改？用轻墨，点格就能改，改完交 Word。
+
+我做了一个 Windows Markdown 编辑器，叫轻墨。表格可以直接点击修改、增删行列；双击数学公式，可以点进分子、分母和上下标编辑。整理教案、试题或项目方案后，点击「导出 Word」生成可继续编辑的 DOCX。
+
+这里有操作视频、两篇配图教程，以及可下载试用的 Markdown / Word 示例：
+https://github.com/zhangning-accp/qingmo/tree/main/docs/promotion
+
+下载：
+https://github.com/zhangning-accp/qingmo/releases/latest/download/Qingmo-Windows-x64.exe
+
+目前支持 Windows 10/11 64 位，需要 WebView2。常见数学公式可以导出，复杂公式会给提示。欢迎用自己的文档试试，告诉我哪一步用着不顺手。
